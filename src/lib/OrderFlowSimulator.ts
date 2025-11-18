@@ -108,7 +108,7 @@ export class OrderFlowSimulator {
       this.informedTraders.push(
         new InformedTrader({
           initialBelief: initialPrice * beliefVariation,
-          threshold: 0.012, // 1.2% threshold to trade (balanced for volume and choppiness)
+          threshold: 0.02, // 1.2% threshold to trade (balanced for volume and choppiness)
           aggression: 0.005, // 0.5% crossing of spread (more aggressive)
           baseSize: 100,
         })
