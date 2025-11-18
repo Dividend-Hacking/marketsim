@@ -170,18 +170,27 @@ export function useMarketSimulation() {
   /**
    * Simulation step - called every interval
    *
-   * DirectPriceSimulator generates:
-   * - New price using GBM + stochastic volatility + jumps
-   * - OHLCV bars from price path
-   * - Volume with realistic price-volume correlation
+   * Generates multiple price points per bar to create realistic OHLC variation.
+   * Without multiple steps, each bar would have O=H=L=C (appearing as a dot).
+   *
+   * Each step:
+   * - Generates new price using GBM + stochastic volatility + jumps
+   * - Records price in currentBarTrades array
+   * - After all steps, bar is closed with varied OHLC values
    */
   const simulationStep = useCallback(() => {
     const simulator = simulatorRef.current;
 
-    // Run one step of DirectPriceSimulator (generates price with GBM)
-    simulator.simulateStep();
+    // Generate 7 price updates per bar for realistic OHLC variation
+    // This creates candlesticks with visible bodies and wicks
+    // Each price point is a proper GBM step with stochastic volatility
+    const STEPS_PER_BAR = 7;
 
-    // Close bar if time elapsed
+    for (let i = 0; i < STEPS_PER_BAR; i++) {
+      simulator.simulateStep();
+    }
+
+    // Close bar after all steps (creates OHLC from the 7 price points)
     simulator.closeCurrentBar();
 
     // Maybe change regime randomly (affects drift parameter)
