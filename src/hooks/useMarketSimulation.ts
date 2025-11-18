@@ -105,6 +105,9 @@ export function useMarketSimulation() {
       let remainingSize = fillSize;
       let tradePnL = 0;
 
+      // Track positions that will be closed (for cancelling their TP/SL orders)
+      const closedPositionIds: string[] = [];
+
       // Process closing of opposite positions (immutably)
       positions = positions.map((position) => {
         // Skip if not opposite side or no remaining size to fill
@@ -125,10 +128,16 @@ export function useMarketSimulation() {
         tradePnL += pnl;
         remainingSize -= closeSize;
 
+        // Track if this position will be fully closed
+        const newSize = position.size - closeSize;
+        if (newSize <= 0) {
+          closedPositionIds.push(position.id);
+        }
+
         // Return NEW position object with updated size
         return {
           ...position,
-          size: position.size - closeSize,
+          size: newSize,
         };
       }).filter((p) => p.size > 0); // Remove fully closed positions
 
@@ -193,8 +202,40 @@ export function useMarketSimulation() {
       // Add to trade history (immutably)
       const tradeHistory = [trade, ...prev.tradeHistory.slice(0, 99)];
 
-      // Remove from active orders (immutably)
-      const activeOrders = prev.activeOrders.filter((o) => o.id !== order.id);
+      // Cancel all TP/SL orders for closed positions
+      // When a position closes, any remaining TP/SL orders should be cancelled
+      // to prevent them from creating new positions in the opposite direction
+      let activeOrders = prev.activeOrders.filter((o) => {
+        // Remove the executed order
+        if (o.id === order.id) return false;
+
+        // If any positions were closed, cancel their associated TP/SL orders
+        if (closedPositionIds.length > 0) {
+          // Find the closed position to check its TP/SL prices
+          const closedPosition = prev.positions.find(p => closedPositionIds.includes(p.id));
+          if (closedPosition) {
+            // Cancel orders that match the TP/SL prices of closed positions
+            // TP order: limit order at tpPrice, opposite side to position
+            const isTpOrder =
+              o.type === 'limit' &&
+              o.side !== closedPosition.side &&
+              closedPosition.tpPrice !== undefined &&
+              o.limitPrice === closedPosition.tpPrice;
+
+            // SL order: stop order at slPrice, opposite side to position
+            const isSlOrder =
+              o.type === 'stop' &&
+              o.side !== closedPosition.side &&
+              closedPosition.slPrice !== undefined &&
+              o.stopPrice === closedPosition.slPrice;
+
+            // Cancel if this is a TP or SL order for the closed position
+            if (isTpOrder || isSlOrder) return false;
+          }
+        }
+
+        return true;
+      });
 
       // Return completely new portfolio object (all fields new)
       return {

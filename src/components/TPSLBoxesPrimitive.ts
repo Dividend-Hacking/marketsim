@@ -198,6 +198,11 @@ export class TPSLBoxesPrimitive implements ISeriesPrimitive<Time> {
   private _hoveredBox: 'tp' | 'sl' | null = null;
   private _draggingBox: 'tp' | 'sl' | null = null;
 
+  // Visibility flags - control whether boxes are shown
+  // Hide boxes when orders already exist to avoid clutter
+  private _showTpBox: boolean = true;
+  private _showSlBox: boolean = true;
+
   // Box dimensions (must match renderer)
   private readonly BOX_WIDTH = 70;
   private readonly BOX_HEIGHT = 24;
@@ -284,6 +289,28 @@ export class TPSLBoxesPrimitive implements ISeriesPrimitive<Time> {
   }
 
   /**
+   * Set whether TP box should be visible
+   * Hide when order already exists to avoid clutter
+   */
+  setShowTPBox(show: boolean) {
+    if (this._showTpBox !== show) {
+      this._showTpBox = show;
+      this._requestUpdate?.();
+    }
+  }
+
+  /**
+   * Set whether SL box should be visible
+   * Hide when order already exists to avoid clutter
+   */
+  setShowSLBox(show: boolean) {
+    if (this._showSlBox !== show) {
+      this._showSlBox = show;
+      this._requestUpdate?.();
+    }
+  }
+
+  /**
    * Get current position
    */
   getPosition(): Position | null {
@@ -317,10 +344,12 @@ export class TPSLBoxesPrimitive implements ISeriesPrimitive<Time> {
 
   /**
    * Create renderer with current state
+   * Only passes Y coordinates for boxes that should be visible
    */
   renderer() {
-    const tpY = this._series?.priceToCoordinate(this._tpPrice) ?? null;
-    const slY = this._series?.priceToCoordinate(this._slPrice) ?? null;
+    // Only calculate Y coordinate if box should be shown
+    const tpY = this._showTpBox ? (this._series?.priceToCoordinate(this._tpPrice) ?? null) : null;
+    const slY = this._showSlBox ? (this._series?.priceToCoordinate(this._slPrice) ?? null) : null;
     const chartWidth = this._chart?.timeScale().width() ?? 0;
 
     return new TPSLBoxesRenderer(

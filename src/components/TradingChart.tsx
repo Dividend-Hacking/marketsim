@@ -284,6 +284,7 @@ export function TradingChart({
   /**
    * Manage TP/SL box primitives for each position
    * Creates draggable boxes for setting take profit and stop loss orders
+   * Hides boxes when orders already exist to avoid clutter
    */
   useEffect(() => {
     if (!seriesRef.current) return;
@@ -320,8 +321,28 @@ export function TradingChart({
       if (position.slPrice !== undefined) {
         primitive.setSLPrice(position.slPrice);
       }
+
+      // Check if TP/SL orders already exist for this position
+      // Hide creation boxes when orders are already placed to avoid clutter
+      const hasTpOrder = activeOrders.some(
+        (order) =>
+          order.type === 'limit' &&
+          order.side !== position.side &&
+          order.limitPrice === position.tpPrice
+      );
+
+      const hasSlOrder = activeOrders.some(
+        (order) =>
+          order.type === 'stop' &&
+          order.side !== position.side &&
+          order.stopPrice === position.slPrice
+      );
+
+      // Show boxes only when orders don't exist
+      primitive.setShowTPBox(!hasTpOrder);
+      primitive.setShowSLBox(!hasSlOrder);
     });
-  }, [positions]);
+  }, [positions, activeOrders]);
 
   /**
    * Validate TP/SL price levels based on position side
