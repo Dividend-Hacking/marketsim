@@ -88,34 +88,31 @@ export function useMarketSimulation() {
   /**
    * Execute a user order (fill it and update positions/cash)
    * Handles opening new positions and closing/modifying existing ones
+   *
+   * CRITICAL: Maintains immutability - creates all new objects/arrays
+   * This ensures React properly detects state changes
    */
   const executeOrder = useCallback((order: UserOrder, fillPrice: number) => {
     setPortfolio((prev) => {
-      const updatedPortfolio = { ...prev };
+      // Calculate order details
       const fillSize = order.size - order.filledSize;
       const fillCost = fillSize * fillPrice;
 
-      // Create trade record
-      const trade: CompletedTrade = {
-        id: `trade-${Date.now()}-${Math.random()}`,
-        orderId: order.id,
-        side: order.side,
-        size: fillSize,
-        price: fillPrice,
-        timestamp: Date.now(),
-      };
-
-      // Find if we have an opposite position to close
-      const oppositePositions = updatedPortfolio.positions.filter(
-        (pos) => pos.side !== order.side
-      );
-
+      // Initialize values that will be updated
+      let positions = [...prev.positions]; // Create new array
+      let cash = prev.cash;
+      let realizedPnL = prev.realizedPnL;
       let remainingSize = fillSize;
-      let realizedPnL = 0;
+      let tradePnL = 0;
 
-      // Close opposite positions first
-      for (let i = oppositePositions.length - 1; i >= 0 && remainingSize > 0; i--) {
-        const position = oppositePositions[i];
+      // Process closing of opposite positions (immutably)
+      positions = positions.map((position) => {
+        // Skip if not opposite side or no remaining size to fill
+        if (position.side === order.side || remainingSize <= 0) {
+          return position; // Return unchanged
+        }
+
+        // Calculate how much to close
         const closeSize = Math.min(position.size, remainingSize);
 
         // Calculate P&L for this close
@@ -125,33 +122,40 @@ export function useMarketSimulation() {
             : (position.entryPrice - fillPrice) * closeSize;
 
         realizedPnL += pnl;
-        trade.pnl = (trade.pnl || 0) + pnl;
-
-        // Update or remove position
-        position.size -= closeSize;
-        if (position.size === 0) {
-          updatedPortfolio.positions = updatedPortfolio.positions.filter(
-            (p) => p.id !== position.id
-          );
-        }
-
+        tradePnL += pnl;
         remainingSize -= closeSize;
-      }
 
-      // If still have size remaining, open/add to position
+        // Return NEW position object with updated size
+        return {
+          ...position,
+          size: position.size - closeSize,
+        };
+      }).filter((p) => p.size > 0); // Remove fully closed positions
+
+      // Open or add to position if remaining size (immutably)
       if (remainingSize > 0) {
-        const existingPosition = updatedPortfolio.positions.find(
+        const existingPositionIndex = positions.findIndex(
           (pos) => pos.side === order.side
         );
 
-        if (existingPosition) {
-          // Add to existing position (update average entry price)
+        if (existingPositionIndex !== -1) {
+          // Add to existing position - create new object
+          const existingPosition = positions[existingPositionIndex];
           const totalSize = existingPosition.size + remainingSize;
-          existingPosition.entryPrice =
+          const newEntryPrice =
             (existingPosition.entryPrice * existingPosition.size +
               fillPrice * remainingSize) /
             totalSize;
-          existingPosition.size = totalSize;
+
+          positions = [
+            ...positions.slice(0, existingPositionIndex),
+            {
+              ...existingPosition,
+              size: totalSize,
+              entryPrice: newEntryPrice,
+            },
+            ...positions.slice(existingPositionIndex + 1),
+          ];
         } else {
           // Create new position
           const newPosition: Position = {
@@ -164,38 +168,44 @@ export function useMarketSimulation() {
             unrealizedPnL: 0,
             openTimestamp: Date.now(),
           };
-          updatedPortfolio.positions.push(newPosition);
+          positions = [...positions, newPosition];
         }
       }
 
-      // Update cash (subtract for buys, add for sells)
+      // Update cash (immutably - already creating new value)
       if (order.side === 'buy') {
-        updatedPortfolio.cash -= fillCost;
+        cash -= fillCost;
       } else {
-        updatedPortfolio.cash += fillCost;
+        cash += fillCost;
       }
 
-      // Update realized P&L
-      updatedPortfolio.realizedPnL += realizedPnL;
+      // Create trade record
+      const trade: CompletedTrade = {
+        id: `trade-${Date.now()}-${Math.random()}`,
+        orderId: order.id,
+        side: order.side,
+        size: fillSize,
+        price: fillPrice,
+        timestamp: Date.now(),
+        pnl: tradePnL,
+      };
 
-      // Add to trade history
-      updatedPortfolio.tradeHistory.unshift(trade);
-      if (updatedPortfolio.tradeHistory.length > 100) {
-        updatedPortfolio.tradeHistory = updatedPortfolio.tradeHistory.slice(0, 100);
-      }
+      // Add to trade history (immutably)
+      const tradeHistory = [trade, ...prev.tradeHistory.slice(0, 99)];
 
-      // Update order status
-      order.filledSize = order.size;
-      order.avgFillPrice = fillPrice;
-      order.status = 'filled';
-      order.filledTimestamp = Date.now();
+      // Remove from active orders (immutably)
+      const activeOrders = prev.activeOrders.filter((o) => o.id !== order.id);
 
-      // Remove from active orders
-      updatedPortfolio.activeOrders = updatedPortfolio.activeOrders.filter(
-        (o) => o.id !== order.id
-      );
-
-      return updatedPortfolio;
+      // Return completely new portfolio object (all fields new)
+      return {
+        cash,
+        positions,
+        activeOrders,
+        totalEquity: prev.totalEquity, // Will be recalculated by updatePortfolioValue
+        realizedPnL,
+        unrealizedPnL: prev.unrealizedPnL, // Will be recalculated by updatePortfolioValue
+        tradeHistory,
+      };
     });
   }, []);
 
