@@ -401,7 +401,8 @@ export function TradingChart({
       return;
     }
 
-    // Find any existing TP/SL order for this position
+    // Find any existing TP/SL order for this position at the current stored price
+    // This ensures we cancel the right order when user drags it to a new price
     const existingOrder = activeOrders.find((order) => {
       // Check if this is a TP/SL order for the current position
       const isOppositeOrder = order.side !== position.side;
@@ -409,13 +410,20 @@ export function TradingChart({
       const isSL = type === 'sl' && order.type === 'stop';
       const isSameSize = order.size === position.size;
 
-      return isOppositeOrder && (isTP || isSL) && isSameSize;
+      // Also verify it matches the current TP/SL price stored in position
+      const matchesCurrentPrice = type === 'tp'
+        ? (position.tpPrice !== undefined && order.limitPrice === position.tpPrice)
+        : (position.slPrice !== undefined && order.stopPrice === position.slPrice);
+
+      return isOppositeOrder && (isTP || isSL) && isSameSize && matchesCurrentPrice;
     });
 
-    // If existing order exists at a different price, we'll create a new one
-    // (The old one will remain unless manually cancelled)
+    // Cancel existing order before creating new one (prevents duplicate orders)
+    if (existingOrder && onCancelOrder) {
+      onCancelOrder(existingOrder.id);
+    }
 
-    // Create the order
+    // Create the new order at the new price
     const orderSide: OrderSide = position.side === 'buy' ? 'sell' : 'buy'; // Opposite side to close
     const orderType: OrderType = type === 'tp' ? 'limit' : 'stop';
 

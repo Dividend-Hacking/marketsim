@@ -206,34 +206,43 @@ export function useMarketSimulation() {
       // When a position closes, any remaining TP/SL orders should be cancelled
       // to prevent them from creating new positions in the opposite direction
       let activeOrders = prev.activeOrders.filter((o) => {
-        // Remove the executed order
+        // Remove the executed order first
         if (o.id === order.id) return false;
 
-        // If any positions were closed, cancel their associated TP/SL orders
-        if (closedPositionIds.length > 0) {
-          // Find the closed position to check its TP/SL prices
-          const closedPosition = prev.positions.find(p => closedPositionIds.includes(p.id));
-          if (closedPosition) {
-            // Cancel orders that match the TP/SL prices of closed positions
-            // TP order: limit order at tpPrice, opposite side to position
-            const isTpOrder =
-              o.type === 'limit' &&
-              o.side !== closedPosition.side &&
-              closedPosition.tpPrice !== undefined &&
-              o.limitPrice === closedPosition.tpPrice;
+        // If no positions were closed, keep all other orders
+        if (closedPositionIds.length === 0) return true;
 
-            // SL order: stop order at slPrice, opposite side to position
-            const isSlOrder =
-              o.type === 'stop' &&
-              o.side !== closedPosition.side &&
-              closedPosition.slPrice !== undefined &&
-              o.stopPrice === closedPosition.slPrice;
+        // For each closed position, check if this order is a TP/SL for it
+        for (const closedPosId of closedPositionIds) {
+          // Find the closed position in the ORIGINAL prev.positions array
+          // (before filtering removed it)
+          const closedPosition = prev.positions.find(p => p.id === closedPosId);
+          if (!closedPosition) continue;
 
-            // Cancel if this is a TP or SL order for the closed position
-            if (isTpOrder || isSlOrder) return false;
+          // Check if this is a TP or SL order for the closed position
+          // TP order: limit order on opposite side at the TP price with matching size
+          const isTpOrder =
+            o.type === 'limit' &&
+            o.side !== closedPosition.side &&
+            o.size === closedPosition.size &&
+            closedPosition.tpPrice !== undefined &&
+            o.limitPrice === closedPosition.tpPrice;
+
+          // SL order: stop order on opposite side at the SL price with matching size
+          const isSlOrder =
+            o.type === 'stop' &&
+            o.side !== closedPosition.side &&
+            o.size === closedPosition.size &&
+            closedPosition.slPrice !== undefined &&
+            o.stopPrice === closedPosition.slPrice;
+
+          // If this order is TP/SL for any closed position, cancel it
+          if (isTpOrder || isSlOrder) {
+            return false; // Cancel this order
           }
         }
 
+        // Keep orders that don't match any closed position's TP/SL
         return true;
       });
 
