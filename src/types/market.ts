@@ -162,6 +162,8 @@ export interface UserOrder {
   avgFillPrice: number; // Average price at which order was filled
   timestamp: number; // When order was placed
   filledTimestamp?: number; // When order was fully filled
+  closePosition?: boolean; // If true, this order should close an entire position (for TP/SL)
+  linkedPositionId?: string; // The position this order is linked to (for TP/SL)
 }
 
 /**

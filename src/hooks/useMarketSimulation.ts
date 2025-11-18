@@ -94,8 +94,23 @@ export function useMarketSimulation() {
    */
   const executeOrder = useCallback((order: UserOrder, fillPrice: number) => {
     setPortfolio((prev) => {
-      // Calculate order details
-      const fillSize = order.size - order.filledSize;
+      // For position-closing orders (TP/SL), use the current position size instead of order size
+      // This prevents flipping the position if sizes don't match
+      let actualFillSize = order.size - order.filledSize;
+
+      if (order.closePosition && order.linkedPositionId) {
+        // Find the linked position
+        const linkedPosition = prev.positions.find(p => p.id === order.linkedPositionId);
+        if (linkedPosition) {
+          // Use the current position size instead of the order's fixed size
+          actualFillSize = linkedPosition.size;
+        } else {
+          // Position no longer exists - cancel this order execution
+          return prev;
+        }
+      }
+
+      const fillSize = actualFillSize;
       const fillCost = fillSize * fillPrice;
 
       // Initialize values that will be updated
@@ -146,9 +161,17 @@ export function useMarketSimulation() {
 
       // Process closing of opposite positions (immutably)
       positions = positions.map((position) => {
-        // Skip if not opposite side or no remaining size to fill
-        if (position.side === order.side || remainingSize <= 0) {
-          return position; // Return unchanged
+        // For closePosition orders, only close the specific linked position
+        if (order.closePosition && order.linkedPositionId) {
+          if (position.id !== order.linkedPositionId) {
+            return position; // Skip positions that aren't the linked one
+          }
+          // Continue to close this specific position below
+        } else {
+          // For regular orders, skip if not opposite side or no remaining size to fill
+          if (position.side === order.side || remainingSize <= 0) {
+            return position; // Return unchanged
+          }
         }
 
         // Calculate how much to close
@@ -178,7 +201,9 @@ export function useMarketSimulation() {
       }).filter((p) => p.size > 0); // Remove fully closed positions
 
       // Open or add to position if remaining size (immutably)
-      if (remainingSize > 0) {
+      // IMPORTANT: For closePosition orders (TP/SL), never open a new position
+      // This prevents flipping the position when TP/SL triggers
+      if (remainingSize > 0 && !order.closePosition) {
         const existingPositionIndex = positions.findIndex(
           (pos) => pos.side === order.side
         );
@@ -393,9 +418,16 @@ export function useMarketSimulation() {
   /**
    * Place a new user order
    * Market orders execute immediately, limit/stop orders are queued
+   * For TP/SL orders, set closePosition=true and linkedPositionId to ensure proper closing
    */
   const placeOrder = useCallback(
-    (side: OrderSide, type: OrderType, size: number, price?: number) => {
+    (
+      side: OrderSide,
+      type: OrderType,
+      size: number,
+      price?: number,
+      options?: { closePosition?: boolean; linkedPositionId?: string }
+    ) => {
       // Create new order
       const newOrder: UserOrder = {
         id: `order-${Date.now()}-${Math.random()}`,
@@ -408,6 +440,8 @@ export function useMarketSimulation() {
         filledSize: 0,
         avgFillPrice: 0,
         timestamp: Date.now(),
+        closePosition: options?.closePosition,
+        linkedPositionId: options?.linkedPositionId,
       };
 
       // Market orders execute immediately

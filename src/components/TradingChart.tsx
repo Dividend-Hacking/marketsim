@@ -427,7 +427,12 @@ export function TradingChart({
     const orderSide: OrderSide = position.side === 'buy' ? 'sell' : 'buy'; // Opposite side to close
     const orderType: OrderType = type === 'tp' ? 'limit' : 'stop';
 
-    onPlaceOrder(orderSide, orderType, position.size, price);
+    // Mark order as position-closing and link it to this specific position
+    // This ensures the order will close the entire position when triggered, not flip it
+    onPlaceOrder(orderSide, orderType, position.size, price, {
+      closePosition: true,
+      linkedPositionId: positionId,
+    });
 
     // Update position TP/SL price
     if (type === 'tp') {
