@@ -10,8 +10,9 @@
  * 1. Geometric Brownian Motion (GBM) - Price Target Evolution
  *    - Formula: dS = μS dt + σS dW
  *    - Properly time-scaled with sqrt(dt) for 250ms bars
- *    - Autocorrelation (0.2) adds realistic trending periods
- *    - Creates the fundamental price direction
+ *    - LOW autocorrelation (0.05) prevents positive feedback loops
+ *    - REDUCED drift (0.05%/bar) creates subtle bias without dominating
+ *    - Creates the fundamental price direction with realistic randomness
  *
  * 2. Agent-Based Market Microstructure - Order Generation
  *    Four trader types with balanced activation rates:
@@ -21,15 +22,17 @@
  *       - Create "gravity well" for price stability
  *       - Enable bid-ask bounce effect
  *
- *    b) Momentum Traders (60% activation)
- *       - Follow actual price trends over 5-bar lookback
+ *    b) Momentum Traders (40% activation, REDUCED from 60%)
+ *       - Follow actual price trends over 12-bar lookback (3 seconds)
+ *       - 1.0% threshold filters noise, catches real trends only
  *       - Buy rising prices, sell falling prices
- *       - Create realistic trending periods
+ *       - Create occasional trending periods
  *
- *    c) Mean Reversion Traders (90% activation)
- *       - Push price toward GBM target
- *       - Prevent excessive deviation from fundamentals
- *       - Balance momentum to create mixed behavior
+ *    c) Mean Reversion Traders (90% activation, STRENGTHENED)
+ *       - Push price toward GBM target at 0.15% deviation
+ *       - 2-3 orders per activation (vs 1) to counteract momentum
+ *       - Larger order sizes (500-1200) prevent runaway trends
+ *       - Dominant force that creates mean-reverting behavior
  *
  *    d) Noise Traders (orderFlow-dependent)
  *       - Add realistic random variation (±0.5%)
@@ -45,19 +48,23 @@
  *    - Trades execute at maker price (bid or ask)
  *    - Natural alternation between bid/ask creates realistic microstructure
  *
- * KEY PARAMETERS:
+ * KEY PARAMETERS (TUNED FOR REALISTIC RANDOM WALK):
  * - Bar duration: 250ms (4 bars per second)
- * - Price history: 15 bars for momentum calculation
- * - Autocorrelation: 0.2 (balanced trending/random)
+ * - Price history: 15 bars stored, 12-bar lookback for momentum
+ * - Autocorrelation: 0.05 (prevents feedback loops, was 0.2)
  * - Volatility: 8-15% (regime-dependent)
- * - Drift: -0.15% to +0.2% (regime-dependent)
+ * - Drift: -0.0375% to +0.05% per bar (subtle bias, was 4x higher)
+ * - Momentum threshold: 1.0% over 3s (catches real trends, was 0.2%)
+ * - Mean reversion: 0.15% threshold, 2-3 orders (strong force)
  *
  * REALISTIC BEHAVIORS ACHIEVED:
- * ✓ Mixed trending and mean-reverting periods
+ * ✓ Random walk dominates (not linear trends)
+ * ✓ Occasional trending periods from real momentum
+ * ✓ Strong mean reversion prevents sustained runs
  * ✓ Proper volatility scaling for time scale
  * ✓ Volume increases during price moves
  * ✓ Bid-ask bounce at tick level
- * ✓ No sustained directional bias (fixed inverted momentum bug)
+ * ✓ No positive feedback loops or directional bias
  * ✓ Regime-based market phases (bull/bear/sideways)
  */
 
@@ -78,8 +85,10 @@ export class MarketSimulator {
 
   // Autocorrelation parameter: adds slight persistence to price movements
   // Positive value (0.0-0.5) creates trending periods like real markets
-  // 0.0 = pure random walk, 0.5 = strong trending, 0.2 = balanced
-  private readonly AUTOCORRELATION = 0.2;
+  // 0.0 = pure random walk, 0.5 = strong trending
+  // REDUCED from 0.2 to 0.05 to eliminate positive feedback loops that created
+  // sustained directional runs. 0.2 created 1.25x amplification; 0.05 creates 1.05x.
+  private readonly AUTOCORRELATION = 0.05;
   private lastPriceChange: number = 0; // Previous bar's price change for autocorrelation
 
   // Volume-price correlation: track recent price volatility to scale order flow
@@ -89,12 +98,12 @@ export class MarketSimulator {
   // Regime parameters define behavior for each market phase
   private readonly regimeParams: Record<MarketRegime, RegimeParams> = {
     bull: {
-      drift: 0.002, // ~0.2% per bar upward drift
+      drift: 0.0005, // REDUCED 75% from 0.002: ~0.05% per bar = ~0.2% per second (subtle upward bias)
       volatility: 0.12, // Increased from 0.015 for more realistic movement
       orderFlow: 8, // More orders in trending markets
     },
     bear: {
-      drift: -0.0015, // ~0.15% per bar downward drift
+      drift: -0.000375, // REDUCED 75% from -0.0015: ~0.0375% per bar = ~0.15% per second (subtle downward bias)
       volatility: 0.15, // Increased from 0.025 for higher volatility in bear markets
       orderFlow: 10, // Panic creates more activity
     },
@@ -322,21 +331,24 @@ export class MarketSimulator {
    */
   private generateMomentumOrders(currentPrice: number, params: RegimeParams, volumeMultiplier: number = 1.0): void {
     // Need sufficient price history to calculate momentum
-    if (this.priceHistory.length < 5) return;
+    // INCREASED from 5 to 12 bars to better distinguish trends from noise
+    if (this.priceHistory.length < 12) return;
 
-    // 60% activation - reduced from 80% to balance with mean reversion
+    // REDUCED from 60% to 40% activation to allow more random walk behavior
     // This creates a realistic mix of trending and mean-reverting behavior
-    if (Math.random() > 0.6) return;
+    if (Math.random() > 0.4) return;
 
     // Calculate momentum as percentage change over last N bars
-    // Using last 5 bars (1.25 seconds) for short-term momentum
-    const lookbackPeriod = Math.min(5, this.priceHistory.length);
+    // INCREASED from 5 to 12 bars (3 seconds vs 1.25s) for more reliable trend detection
+    // Longer lookback period filters out short-term noise
+    const lookbackPeriod = Math.min(12, this.priceHistory.length);
     const oldPrice = this.priceHistory[this.priceHistory.length - lookbackPeriod];
     const momentum = (currentPrice - oldPrice) / oldPrice;
 
-    // Only trade if momentum exceeds threshold (0.2% move over lookback period)
-    // This filters out noise and ensures we're catching real trends
-    if (Math.abs(momentum) < 0.002) return;
+    // INCREASED threshold from 0.002 (0.2%) to 0.01 (1.0%)
+    // This ensures we only trade on REAL trends, not random noise
+    // With ~9% std dev over 12 bars, 1% is a meaningful signal
+    if (Math.abs(momentum) < 0.01) return;
 
     // CORRECT LOGIC: Buy on positive momentum, sell on negative momentum
     const side = momentum > 0 ? 'buy' : 'sell';
@@ -371,36 +383,47 @@ export class MarketSimulator {
   /**
    * Mean reversion traders bet on price returning to target
    * Buy when price is below target, sell when above
-   * Now uses AGGRESSIVE crossing orders instead of passive orders
+   *
+   * STRENGTHENED to counteract momentum and prevent sustained directional runs:
+   * - Tightened threshold to catch trends earlier (0.15% vs 0.3%)
+   * - Increased order count (2-3 vs 1) to match momentum trader force
+   * - Increased order sizes (500-1200 vs 300-800)
    */
   private generateMeanReversionOrders(currentPrice: number, params: RegimeParams, volumeMultiplier: number = 1.0): void {
-    // High activation rate - increased from 0.7 to 0.9 (90% activation for active price correction)
+    // High activation rate - 90% activation for active price correction
     if (Math.random() > 0.9) return;
 
     const priceDiff = this.targetPrice - currentPrice;
     const deviation = Math.abs(priceDiff / currentPrice);
 
-    // Trade on smaller deviations - reduced from 0.01 to 0.003 (0.3% threshold for more sensitivity)
-    if (deviation < 0.003) return;
+    // TIGHTENED from 0.003 (0.3%) to 0.0015 (0.15%)
+    // Catches trends earlier before momentum builds up too much
+    if (deviation < 0.0015) return;
 
     const side = priceDiff > 0 ? 'buy' : 'sell';
-    const size = this.randomBetween(300, 800) * (1 + deviation * 10) * volumeMultiplier;
 
-    // Place AGGRESSIVE orders that cross the spread to actively move price toward target
-    let price: number;
-    if (side === 'buy') {
-      price = this.roundPrice(currentPrice * (1 + 0.002)); // Buy 0.2% above current (crosses spread)
-    } else {
-      price = this.roundPrice(currentPrice * (1 - 0.002)); // Sell 0.2% below current (crosses spread)
+    // INCREASED from 1 to 2-3 orders to match momentum trader force
+    const numOrders = Math.floor(this.randomBetween(2, 3));
+    for (let i = 0; i < numOrders; i++) {
+      // INCREASED size from 300-800 to 500-1200 for stronger mean reversion force
+      const size = this.randomBetween(500, 1200) * (1 + deviation * 10) * volumeMultiplier;
+
+      // Place AGGRESSIVE orders that cross the spread to actively move price toward target
+      let price: number;
+      if (side === 'buy') {
+        price = this.roundPrice(currentPrice * (1 + 0.002)); // Buy 0.2% above current (crosses spread)
+      } else {
+        price = this.roundPrice(currentPrice * (1 - 0.002)); // Sell 0.2% below current (crosses spread)
+      }
+
+      this.orderBook.addOrder({
+        id: `order_${this.orderIdCounter++}`,
+        side,
+        price,
+        size,
+        timestamp: Date.now(),
+      });
     }
-
-    this.orderBook.addOrder({
-      id: `order_${this.orderIdCounter++}`,
-      side,
-      price,
-      size,
-      timestamp: Date.now(),
-    });
   }
 
   /**
