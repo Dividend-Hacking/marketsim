@@ -109,8 +109,8 @@ export class MarketSimulator {
     const spread = currentPrice * 0.005; // 0.5% spread - widened from 0.001 for more realistic market depth
     const orderSize = this.randomBetween(50, 200);
 
-    // Post buy orders below current price
-    const numBids = Math.floor(this.randomBetween(2, 5));
+    // Post buy orders below current price - reduced from 2-5 to 0-2 to reduce MM dominance
+    const numBids = Math.floor(this.randomBetween(0, 2));
     for (let i = 0; i < numBids; i++) {
       const offset = spread * (i + 1) * this.randomBetween(0.8, 1.2);
       const price = this.roundPrice(currentPrice - offset);
@@ -125,8 +125,8 @@ export class MarketSimulator {
       });
     }
 
-    // Post sell orders above current price
-    const numAsks = Math.floor(this.randomBetween(2, 5));
+    // Post sell orders above current price - reduced from 2-5 to 0-2 to reduce MM dominance
+    const numAsks = Math.floor(this.randomBetween(0, 2));
     for (let i = 0; i < numAsks; i++) {
       const offset = spread * (i + 1) * this.randomBetween(0.8, 1.2);
       const price = this.roundPrice(currentPrice + offset);
@@ -147,30 +147,30 @@ export class MarketSimulator {
    * Buy when price is rising, sell when falling
    */
   private generateMomentumOrders(currentPrice: number, params: RegimeParams): void {
-    // Skip some steps randomly (not every trader acts every second)
-    if (Math.random() > 0.4) return;
+    // Skip some steps randomly - increased from 0.4 to 0.8 (80% activation for fluid price movement)
+    if (Math.random() > 0.8) return;
 
     const priceDiff = currentPrice - this.targetPrice;
     const trend = priceDiff / currentPrice;
 
-    // Strong momentum above 0.2% difference - lowered from 0.005 (0.5%) to allow more activation
-    if (Math.abs(trend) < 0.002) return;
+    // Momentum triggers on 0.05% difference - lowered from 0.002 (0.2%) for higher sensitivity
+    if (Math.abs(trend) < 0.0005) return;
 
     const side = trend > 0 ? 'buy' : 'sell';
     const aggressiveness = Math.abs(trend) * 100; // How far inside the spread to bid
 
-    // Place aggressive orders that cross the spread
-    const numOrders = Math.floor(this.randomBetween(1, 3));
+    // Place aggressive orders that cross the spread - increased from 1-3 to 2-5 for more impact
+    const numOrders = Math.floor(this.randomBetween(2, 5));
     for (let i = 0; i < numOrders; i++) {
       const size = this.randomBetween(100, 500);
       let price: number;
 
       if (side === 'buy') {
-        // Buy aggressively (hit asks)
-        price = this.roundPrice(currentPrice * (1 + 0.001 * aggressiveness));
+        // Buy aggressively - guaranteed to cross 0.5% MM spread with base 0.3% + additional aggressiveness
+        price = this.roundPrice(currentPrice * (1 + 0.003 + 0.001 * aggressiveness));
       } else {
-        // Sell aggressively (hit bids)
-        price = this.roundPrice(currentPrice * (1 - 0.001 * aggressiveness));
+        // Sell aggressively - guaranteed to cross 0.5% MM spread with base 0.3% + additional aggressiveness
+        price = this.roundPrice(currentPrice * (1 - 0.003 - 0.001 * aggressiveness));
       }
 
       this.orderBook.addOrder({
@@ -186,26 +186,27 @@ export class MarketSimulator {
   /**
    * Mean reversion traders bet on price returning to target
    * Buy when price is below target, sell when above
+   * Now uses AGGRESSIVE crossing orders instead of passive orders
    */
   private generateMeanReversionOrders(currentPrice: number, params: RegimeParams): void {
-    // Skip some steps randomly - reduced from 0.3 to 0.7 (30% activation instead of 70%)
-    if (Math.random() > 0.7) return;
+    // High activation rate - increased from 0.7 to 0.9 (90% activation for active price correction)
+    if (Math.random() > 0.9) return;
 
     const priceDiff = this.targetPrice - currentPrice;
     const deviation = Math.abs(priceDiff / currentPrice);
 
-    // Only trade if price has deviated significantly - increased from 0.003 to 0.01 (1% instead of 0.3%)
-    if (deviation < 0.01) return;
+    // Trade on smaller deviations - reduced from 0.01 to 0.003 (0.3% threshold for more sensitivity)
+    if (deviation < 0.003) return;
 
     const side = priceDiff > 0 ? 'buy' : 'sell';
     const size = this.randomBetween(100, 400) * (1 + deviation * 10); // Larger size on bigger deviation
 
-    // Place limit orders near current price
+    // Place AGGRESSIVE orders that cross the spread to actively move price toward target
     let price: number;
     if (side === 'buy') {
-      price = this.roundPrice(currentPrice * 0.999); // Buy slightly below
+      price = this.roundPrice(currentPrice * (1 + 0.002)); // Buy 0.2% above current (crosses spread)
     } else {
-      price = this.roundPrice(currentPrice * 1.001); // Sell slightly above
+      price = this.roundPrice(currentPrice * (1 - 0.002)); // Sell 0.2% below current (crosses spread)
     }
 
     this.orderBook.addOrder({
