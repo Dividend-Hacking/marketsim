@@ -88,16 +88,18 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Simulation Controls - Isolated outside grid */}
-      <div className="mt-4 h-96">
-        <SimulationControls
-          isRunning={simulation.isRunning}
-          speed={simulation.speed}
-          regime={simulation.regime}
-          onTogglePause={simulation.togglePause}
-          onSetSpeed={simulation.setSpeed}
-          onInjectEvent={simulation.injectEvent}
-        />
+      {/* Simulation Controls - Matches left column width */}
+      <div className="grid grid-cols-12 gap-4 mt-4">
+        <div className="col-span-9 h-96">
+          <SimulationControls
+            isRunning={simulation.isRunning}
+            speed={simulation.speed}
+            regime={simulation.regime}
+            onTogglePause={simulation.togglePause}
+            onSetSpeed={simulation.setSpeed}
+            onInjectEvent={simulation.injectEvent}
+          />
+        </div>
       </div>
       </div>
     </div>
