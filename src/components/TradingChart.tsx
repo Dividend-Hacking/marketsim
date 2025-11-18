@@ -13,20 +13,30 @@
 
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData } from 'lightweight-charts';
-import { Bar } from '@/types/market';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi } from 'lightweight-charts';
+import { Bar, Drawing, DrawingToolType, DrawingPoint } from '@/types/market';
 
 interface TradingChartProps {
   bars: Bar[];
   currentBar: Bar | null;
+  showDrawingTools: boolean;
 }
 
-export function TradingChart({ bars, currentBar }: TradingChartProps) {
+export function TradingChart({ bars, currentBar, showDrawingTools }: TradingChartProps) {
   // Refs to persist chart instances across renders
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+
+  // Drawing state
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [activeTool, setActiveTool] = useState<DrawingToolType | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [currentDrawing, setCurrentDrawing] = useState<DrawingPoint[]>([]);
+
+  // Store drawing series (line series used to render drawings)
+  const drawingSeriesRef = useRef<Map<string, LineSeriesApi<'Line'>>>(new Map());
 
   /**
    * Initialize the chart on mount
@@ -135,6 +145,181 @@ export function TradingChart({ bars, currentBar }: TradingChartProps) {
     }
   }, [bars, currentBar]);
 
+  /**
+   * Handle mouse click on chart for drawing
+   * Captures time and price coordinates for drawing tools
+   */
+  const handleChartClick = useCallback(
+    (event: MouseEvent) => {
+      if (!activeTool || !chartRef.current) return;
+
+      const chart = chartRef.current;
+      const rect = chartContainerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      // Get time and price at click position
+      const timeScale = chart.timeScale();
+      const priceScale = chart.priceScale('right');
+
+      const time = timeScale.coordinateToTime(event.clientX - rect.left);
+      const price = priceScale.coordinateToPrice(event.clientY - rect.top);
+
+      if (time === null || price === null) return;
+
+      const point: DrawingPoint = { time: time as number, price };
+
+      if (activeTool === 'trendline' || activeTool === 'horizontal') {
+        // Two-point tools: trendline and horizontal line
+        if (currentDrawing.length === 0) {
+          setCurrentDrawing([point]);
+          setIsDrawing(true);
+        } else {
+          // Complete the drawing
+          const newDrawing: Drawing = {
+            id: `drawing-${Date.now()}`,
+            type: activeTool,
+            points: [...currentDrawing, point],
+            style: {
+              color: '#3f51b5',
+              width: 2,
+              lineStyle: 'solid',
+            },
+            createdAt: Date.now(),
+          };
+          setDrawings((prev) => [...prev, newDrawing]);
+          setCurrentDrawing([]);
+          setIsDrawing(false);
+          setActiveTool(null);
+        }
+      } else if (activeTool === 'rectangle') {
+        // Rectangle needs two corner points
+        if (currentDrawing.length === 0) {
+          setCurrentDrawing([point]);
+          setIsDrawing(true);
+        } else {
+          const newDrawing: Drawing = {
+            id: `drawing-${Date.now()}`,
+            type: 'rectangle',
+            points: [...currentDrawing, point],
+            style: {
+              color: '#3f51b5',
+              width: 2,
+              lineStyle: 'solid',
+            },
+            createdAt: Date.now(),
+          };
+          setDrawings((prev) => [...prev, newDrawing]);
+          setCurrentDrawing([]);
+          setIsDrawing(false);
+          setActiveTool(null);
+        }
+      }
+    },
+    [activeTool, currentDrawing]
+  );
+
+  /**
+   * Attach click handler to chart
+   */
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    container.addEventListener('click', handleChartClick as any);
+
+    return () => {
+      container.removeEventListener('click', handleChartClick as any);
+    };
+  }, [handleChartClick]);
+
+  /**
+   * Render drawings on chart using line series
+   */
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    // Clear existing drawing series
+    drawingSeriesRef.current.forEach((series) => {
+      chartRef.current?.removeSeries(series);
+    });
+    drawingSeriesRef.current.clear();
+
+    // Render each drawing
+    drawings.forEach((drawing) => {
+      if (drawing.type === 'trendline' && drawing.points.length === 2) {
+        // Create line series for trendline
+        const lineSeries = chartRef.current!.addSeries(LineSeries, {
+          color: drawing.style.color,
+          lineWidth: drawing.style.width,
+          lineStyle: drawing.style.lineStyle === 'solid' ? 0 : drawing.style.lineStyle === 'dashed' ? 1 : 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+
+        lineSeries.setData([
+          { time: drawing.points[0].time, value: drawing.points[0].price },
+          { time: drawing.points[1].time, value: drawing.points[1].price },
+        ]);
+
+        drawingSeriesRef.current.set(drawing.id, lineSeries);
+      } else if (drawing.type === 'horizontal' && drawing.points.length >= 1) {
+        // Create horizontal price line
+        chartRef.current!.addPriceLine({
+          price: drawing.points[0].price,
+          color: drawing.style.color,
+          lineWidth: drawing.style.width,
+          lineStyle: drawing.style.lineStyle === 'solid' ? 0 : drawing.style.lineStyle === 'dashed' ? 1 : 2,
+          axisLabelVisible: true,
+          title: '',
+        });
+      } else if (drawing.type === 'rectangle' && drawing.points.length === 2) {
+        // Draw rectangle using 4 line series (top, bottom, left, right)
+        const [point1, point2] = drawing.points;
+        const minTime = Math.min(point1.time, point2.time);
+        const maxTime = Math.max(point1.time, point2.time);
+        const minPrice = Math.min(point1.price, point2.price);
+        const maxPrice = Math.max(point1.price, point2.price);
+
+        // Top line
+        const topLine = chartRef.current!.addSeries(LineSeries, {
+          color: drawing.style.color,
+          lineWidth: drawing.style.width,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        topLine.setData([
+          { time: minTime, value: maxPrice },
+          { time: maxTime, value: maxPrice },
+        ]);
+
+        // Bottom line
+        const bottomLine = chartRef.current!.addSeries(LineSeries, {
+          color: drawing.style.color,
+          lineWidth: drawing.style.width,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        bottomLine.setData([
+          { time: minTime, value: minPrice },
+          { time: maxTime, value: minPrice },
+        ]);
+
+        drawingSeriesRef.current.set(drawing.id + '-top', topLine);
+        drawingSeriesRef.current.set(drawing.id + '-bottom', bottomLine);
+      }
+    });
+  }, [drawings]);
+
+  /**
+   * Clear all drawings
+   */
+  const clearDrawings = useCallback(() => {
+    setDrawings([]);
+    setCurrentDrawing([]);
+    setIsDrawing(false);
+    setActiveTool(null);
+  }, []);
+
   return (
     <div className="w-full h-full relative">
       {/* Chart title */}
@@ -142,6 +327,71 @@ export function TradingChart({ bars, currentBar }: TradingChartProps) {
         <h2 className="text-xl font-semibold">STOCK-SIM</h2>
         <p className="text-sm text-gray-400">1s intervals</p>
       </div>
+
+      {/* Drawing Toolbar - appears when drawing tools are enabled */}
+      {showDrawingTools && (
+        <div className="absolute top-4 right-4 z-20 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-2 shadow-lg">
+          <div className="flex flex-col gap-2">
+            <div className="text-xs text-gray-400 font-semibold mb-1 px-2">Drawing Tools</div>
+
+            {/* Trendline Tool */}
+            <button
+              onClick={() => setActiveTool(activeTool === 'trendline' ? null : 'trendline')}
+              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+                activeTool === 'trendline'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-[#0a0a0a] text-gray-300 hover:bg-[#2a2a2a]'
+              }`}
+            >
+              📈 Trendline
+            </button>
+
+            {/* Horizontal Line Tool */}
+            <button
+              onClick={() => setActiveTool(activeTool === 'horizontal' ? null : 'horizontal')}
+              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+                activeTool === 'horizontal'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-[#0a0a0a] text-gray-300 hover:bg-[#2a2a2a]'
+              }`}
+            >
+              ➖ Horizontal
+            </button>
+
+            {/* Rectangle Tool */}
+            <button
+              onClick={() => setActiveTool(activeTool === 'rectangle' ? null : 'rectangle')}
+              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+                activeTool === 'rectangle'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-[#0a0a0a] text-gray-300 hover:bg-[#2a2a2a]'
+              }`}
+            >
+              ▭ Rectangle
+            </button>
+
+            {/* Clear All Drawings */}
+            {drawings.length > 0 && (
+              <>
+                <div className="border-t border-[#2a2a2a] my-1"></div>
+                <button
+                  onClick={clearDrawings}
+                  className="px-3 py-2 rounded text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  🗑️ Clear All
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Drawing status indicator */}
+      {isDrawing && activeTool && (
+        <div className="absolute top-20 right-4 z-20 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">
+          Click to complete {activeTool}
+        </div>
+      )}
 
       {/* Chart container */}
       <div ref={chartContainerRef} className="w-full h-full" />

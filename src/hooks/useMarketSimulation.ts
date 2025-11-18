@@ -29,6 +29,12 @@ import {
   MarketEvent,
   MarketStats,
   Bar,
+  Portfolio,
+  UserOrder,
+  OrderType,
+  OrderSide,
+  Position,
+  CompletedTrade,
 } from '@/types/market';
 
 const INITIAL_PRICE = 100;
@@ -65,8 +71,258 @@ export function useMarketSimulation() {
     },
   });
 
+  // Portfolio state - starts with $100,000 cash
+  const [portfolio, setPortfolio] = useState<Portfolio>({
+    cash: 100000,
+    positions: [],
+    activeOrders: [],
+    totalEquity: 100000,
+    realizedPnL: 0,
+    unrealizedPnL: 0,
+    tradeHistory: [],
+  });
+
   // Interval reference for cleanup
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  /**
+   * Execute a user order (fill it and update positions/cash)
+   * Handles opening new positions and closing/modifying existing ones
+   */
+  const executeOrder = useCallback((order: UserOrder, fillPrice: number) => {
+    setPortfolio((prev) => {
+      const updatedPortfolio = { ...prev };
+      const fillSize = order.size - order.filledSize;
+      const fillCost = fillSize * fillPrice;
+
+      // Create trade record
+      const trade: CompletedTrade = {
+        id: `trade-${Date.now()}-${Math.random()}`,
+        orderId: order.id,
+        side: order.side,
+        size: fillSize,
+        price: fillPrice,
+        timestamp: Date.now(),
+      };
+
+      // Find if we have an opposite position to close
+      const oppositePositions = updatedPortfolio.positions.filter(
+        (pos) => pos.side !== order.side
+      );
+
+      let remainingSize = fillSize;
+      let realizedPnL = 0;
+
+      // Close opposite positions first
+      for (let i = oppositePositions.length - 1; i >= 0 && remainingSize > 0; i--) {
+        const position = oppositePositions[i];
+        const closeSize = Math.min(position.size, remainingSize);
+
+        // Calculate P&L for this close
+        const pnl =
+          position.side === 'buy'
+            ? (fillPrice - position.entryPrice) * closeSize
+            : (position.entryPrice - fillPrice) * closeSize;
+
+        realizedPnL += pnl;
+        trade.pnl = (trade.pnl || 0) + pnl;
+
+        // Update or remove position
+        position.size -= closeSize;
+        if (position.size === 0) {
+          updatedPortfolio.positions = updatedPortfolio.positions.filter(
+            (p) => p.id !== position.id
+          );
+        }
+
+        remainingSize -= closeSize;
+      }
+
+      // If still have size remaining, open/add to position
+      if (remainingSize > 0) {
+        const existingPosition = updatedPortfolio.positions.find(
+          (pos) => pos.side === order.side
+        );
+
+        if (existingPosition) {
+          // Add to existing position (update average entry price)
+          const totalSize = existingPosition.size + remainingSize;
+          existingPosition.entryPrice =
+            (existingPosition.entryPrice * existingPosition.size +
+              fillPrice * remainingSize) /
+            totalSize;
+          existingPosition.size = totalSize;
+        } else {
+          // Create new position
+          const newPosition: Position = {
+            id: `pos-${Date.now()}-${Math.random()}`,
+            symbol: 'STOCK',
+            side: order.side,
+            size: remainingSize,
+            entryPrice: fillPrice,
+            currentPrice: fillPrice,
+            unrealizedPnL: 0,
+            openTimestamp: Date.now(),
+          };
+          updatedPortfolio.positions.push(newPosition);
+        }
+      }
+
+      // Update cash (subtract for buys, add for sells)
+      if (order.side === 'buy') {
+        updatedPortfolio.cash -= fillCost;
+      } else {
+        updatedPortfolio.cash += fillCost;
+      }
+
+      // Update realized P&L
+      updatedPortfolio.realizedPnL += realizedPnL;
+
+      // Add to trade history
+      updatedPortfolio.tradeHistory.unshift(trade);
+      if (updatedPortfolio.tradeHistory.length > 100) {
+        updatedPortfolio.tradeHistory = updatedPortfolio.tradeHistory.slice(0, 100);
+      }
+
+      // Update order status
+      order.filledSize = order.size;
+      order.avgFillPrice = fillPrice;
+      order.status = 'filled';
+      order.filledTimestamp = Date.now();
+
+      // Remove from active orders
+      updatedPortfolio.activeOrders = updatedPortfolio.activeOrders.filter(
+        (o) => o.id !== order.id
+      );
+
+      return updatedPortfolio;
+    });
+  }, []);
+
+  /**
+   * Check and fill limit/stop orders based on current price
+   * Called every simulation step to monitor pending orders
+   */
+  const checkAndFillOrders = useCallback((currentPrice: number) => {
+    setPortfolio((prev) => {
+      const ordersToFill: UserOrder[] = [];
+
+      for (const order of prev.activeOrders) {
+        if (order.type === 'limit') {
+          // Limit buy fills when price <= limit price
+          // Limit sell fills when price >= limit price
+          if (
+            (order.side === 'buy' && currentPrice <= (order.limitPrice || 0)) ||
+            (order.side === 'sell' && currentPrice >= (order.limitPrice || 0))
+          ) {
+            ordersToFill.push(order);
+          }
+        } else if (order.type === 'stop') {
+          // Stop buy fills when price >= stop price
+          // Stop sell fills when price <= stop price
+          if (
+            (order.side === 'buy' && currentPrice >= (order.stopPrice || 0)) ||
+            (order.side === 'sell' && currentPrice <= (order.stopPrice || 0))
+          ) {
+            ordersToFill.push(order);
+          }
+        }
+      }
+
+      // Execute all triggered orders
+      ordersToFill.forEach((order) => {
+        executeOrder(order, currentPrice);
+      });
+
+      return prev;
+    });
+  }, [executeOrder]);
+
+  /**
+   * Update portfolio value based on current market price
+   * Recalculates unrealized P&L and total equity
+   */
+  const updatePortfolioValue = useCallback((currentPrice: number) => {
+    setPortfolio((prev) => {
+      let unrealizedPnL = 0;
+
+      // Update all position values
+      const updatedPositions = prev.positions.map((position) => {
+        const updatedPosition = { ...position };
+        updatedPosition.currentPrice = currentPrice;
+
+        // Calculate unrealized P&L for this position
+        const pnl =
+          position.side === 'buy'
+            ? (currentPrice - position.entryPrice) * position.size
+            : (position.entryPrice - currentPrice) * position.size;
+
+        updatedPosition.unrealizedPnL = pnl;
+        unrealizedPnL += pnl;
+
+        return updatedPosition;
+      });
+
+      // Calculate total equity (cash + position values)
+      const positionValue = updatedPositions.reduce((sum, pos) => {
+        return sum + pos.size * pos.currentPrice;
+      }, 0);
+
+      const totalEquity = prev.cash + positionValue;
+
+      return {
+        ...prev,
+        positions: updatedPositions,
+        unrealizedPnL,
+        totalEquity,
+      };
+    });
+  }, []);
+
+  /**
+   * Place a new user order
+   * Market orders execute immediately, limit/stop orders are queued
+   */
+  const placeOrder = useCallback(
+    (side: OrderSide, type: OrderType, size: number, price?: number) => {
+      // Create new order
+      const newOrder: UserOrder = {
+        id: `order-${Date.now()}-${Math.random()}`,
+        type,
+        side,
+        size,
+        limitPrice: type === 'limit' ? price : undefined,
+        stopPrice: type === 'stop' ? price : undefined,
+        status: type === 'market' ? 'filled' : 'pending',
+        filledSize: 0,
+        avgFillPrice: 0,
+        timestamp: Date.now(),
+      };
+
+      // Market orders execute immediately
+      if (type === 'market') {
+        const currentPrice = state.stats.lastPrice;
+        executeOrder(newOrder, currentPrice);
+      } else {
+        // Limit/Stop orders are added to active orders
+        setPortfolio((prev) => ({
+          ...prev,
+          activeOrders: [...prev.activeOrders, newOrder],
+        }));
+      }
+    },
+    [state.stats.lastPrice, executeOrder]
+  );
+
+  /**
+   * Cancel a pending order
+   */
+  const cancelOrder = useCallback((orderId: string) => {
+    setPortfolio((prev) => ({
+      ...prev,
+      activeOrders: prev.activeOrders.filter((o) => o.id !== orderId),
+    }));
+  }, []);
 
   /**
    * Calculate market statistics from bars and trades
@@ -156,6 +412,8 @@ export function useMarketSimulation() {
    * - Generates orders from all agents
    * - Matches orders in order book (price discovery)
    * - Records trades and creates OHLC bars
+   * - Checks and fills limit/stop orders
+   * - Updates portfolio value based on current price
    */
   const simulationStep = useCallback(() => {
     const simulator = simulatorRef.current;
@@ -177,7 +435,19 @@ export function useMarketSimulation() {
 
     // Update React state with new data
     updateState();
-  }, [updateState]);
+
+    // Get current price for portfolio updates
+    const bars = simulator.getBars();
+    if (bars.length > 0) {
+      const currentPrice = bars[bars.length - 1].close;
+
+      // Check and fill any triggered limit/stop orders
+      checkAndFillOrders(currentPrice);
+
+      // Update portfolio value with current price
+      updatePortfolioValue(currentPrice);
+    }
+  }, [updateState, checkAndFillOrders, updatePortfolioValue]);
 
   /**
    * Start the simulation loop
@@ -224,6 +494,7 @@ export function useMarketSimulation() {
   return {
     // State
     ...state,
+    portfolio,
 
     // Controls
     pause,
@@ -231,5 +502,9 @@ export function useMarketSimulation() {
     togglePause,
     setSpeed,
     injectEvent,
+
+    // Trading functions
+    placeOrder,
+    cancelOrder,
   };
 }

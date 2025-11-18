@@ -13,19 +13,37 @@
 
 'use client';
 
+import { useState } from 'react';
 import { useMarketSimulation } from '@/hooks/useMarketSimulation';
 import { TradingChart } from '@/components/TradingChart';
 import { OrderBook } from '@/components/OrderBook';
 import { TradesFeed } from '@/components/TradesFeed';
 import { MarketStats } from '@/components/MarketStats';
 import { SimulationControls } from '@/components/SimulationControls';
+import { TradingBar } from '@/components/TradingBar';
 
 export default function Home() {
   // Initialize market simulation
   const simulation = useMarketSimulation();
 
+  // Drawing tools visibility state
+  const [showDrawingTools, setShowDrawingTools] = useState(false);
+
   return (
-    <div className="min-h-screen bg-black text-white p-4">
+    <div className="min-h-screen bg-black text-white">
+      {/* Fixed Trading Bar at Top */}
+      <TradingBar
+        portfolio={simulation.portfolio}
+        currentPrice={simulation.stats.lastPrice}
+        isSimulationRunning={simulation.isRunning}
+        onPlaceOrder={simulation.placeOrder}
+        onTogglePause={simulation.togglePause}
+        onToggleDrawingTools={() => setShowDrawingTools(!showDrawingTools)}
+        showDrawingTools={showDrawingTools}
+      />
+
+      {/* Main Content - Add padding-top to account for fixed trading bar */}
+      <div className="pt-20 p-4">
       {/* Header */}
       <div className="mb-4">
         <h1 className="text-2xl font-bold">Market Simulator</h1>
@@ -45,7 +63,11 @@ export default function Home() {
 
           {/* Trading Chart - Takes up remaining space */}
           <div className="flex-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg overflow-hidden">
-            <TradingChart bars={simulation.bars} currentBar={simulation.currentBar} />
+            <TradingChart
+              bars={simulation.bars}
+              currentBar={simulation.currentBar}
+              showDrawingTools={showDrawingTools}
+            />
           </div>
         </div>
 
@@ -73,6 +95,7 @@ export default function Home() {
             />
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

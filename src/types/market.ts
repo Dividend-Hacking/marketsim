@@ -123,3 +123,129 @@ export interface RegimeParams {
   volatility: number; // Daily volatility (standard deviation of returns)
   orderFlow: number; // Intensity of order generation (orders per second)
 }
+
+/**
+ * User Trading System Types
+ * Types for user portfolio management, order placement, and position tracking
+ */
+
+/**
+ * Type of user order
+ * - market: Execute immediately at current market price
+ * - limit: Execute only at specified price or better
+ * - stop: Convert to market order when stop price is reached
+ */
+export type OrderType = 'market' | 'limit' | 'stop';
+
+/**
+ * Status of a user order
+ * - pending: Order placed but not yet filled
+ * - filled: Order completely executed
+ * - partial: Order partially executed
+ * - cancelled: Order cancelled by user
+ */
+export type OrderStatus = 'pending' | 'filled' | 'partial' | 'cancelled';
+
+/**
+ * Represents a user's order (market, limit, or stop)
+ * Tracks order details, execution status, and fill information
+ */
+export interface UserOrder {
+  id: string;
+  type: OrderType;
+  side: OrderSide;
+  size: number;
+  limitPrice?: number; // Required for limit orders
+  stopPrice?: number; // Required for stop orders
+  status: OrderStatus;
+  filledSize: number; // How much of the order has been filled
+  avgFillPrice: number; // Average price at which order was filled
+  timestamp: number; // When order was placed
+  filledTimestamp?: number; // When order was fully filled
+}
+
+/**
+ * Represents an open trading position
+ * Tracks entry price, current value, and profit/loss
+ */
+export interface Position {
+  id: string;
+  symbol: string;
+  side: OrderSide; // 'buy' = long position, 'sell' = short position
+  size: number; // Number of shares
+  entryPrice: number; // Average entry price
+  currentPrice: number; // Current market price
+  unrealizedPnL: number; // Current profit/loss (not yet closed)
+  openTimestamp: number; // When position was opened
+}
+
+/**
+ * User's trading portfolio
+ * Tracks cash balance, open positions, active orders, and total equity
+ */
+export interface Portfolio {
+  cash: number; // Available cash for trading
+  positions: Position[]; // Currently open positions
+  activeOrders: UserOrder[]; // Pending orders (limit/stop not yet filled)
+  totalEquity: number; // Cash + value of all positions
+  realizedPnL: number; // Total profit/loss from closed positions
+  unrealizedPnL: number; // Total profit/loss from open positions
+  tradeHistory: CompletedTrade[]; // History of all executed trades
+}
+
+/**
+ * Record of a completed trade (order fill)
+ * Used for trade history and P&L tracking
+ */
+export interface CompletedTrade {
+  id: string;
+  orderId: string;
+  side: OrderSide;
+  size: number;
+  price: number;
+  timestamp: number;
+  pnl?: number; // Profit/loss if closing a position
+}
+
+/**
+ * Chart Drawing Tools Types
+ * Types for user-drawn annotations and technical analysis tools
+ */
+
+/**
+ * Type of drawing tool
+ * - trendline: Straight line between two points
+ * - horizontal: Horizontal line at a specific price level
+ * - rectangle: Rectangle bounded by two points
+ * - freehand: Free-form drawing path
+ */
+export type DrawingToolType = 'trendline' | 'horizontal' | 'rectangle' | 'freehand';
+
+/**
+ * Point on the chart (time and price coordinates)
+ */
+export interface DrawingPoint {
+  time: number; // Unix timestamp
+  price: number; // Price level
+}
+
+/**
+ * Style properties for drawings
+ */
+export interface DrawingStyle {
+  color: string; // Hex color code
+  width: number; // Line width in pixels
+  lineStyle: 'solid' | 'dashed' | 'dotted';
+}
+
+/**
+ * Represents a drawing on the chart
+ * Stores coordinates, type, and visual styling
+ */
+export interface Drawing {
+  id: string;
+  type: DrawingToolType;
+  points: DrawingPoint[]; // Array of points defining the drawing
+  style: DrawingStyle;
+  createdAt: number; // Timestamp when drawing was created
+}
