@@ -74,7 +74,7 @@ export default function Home() {
             </div>
 
             {/* Simulation Controls */}
-            <div className="h-96 flex-shrink-0">
+            <div className="h-0 flex-shrink-0">
               <SimulationControls
                 isRunning={simulation.isRunning}
                 speed={simulation.speed}
