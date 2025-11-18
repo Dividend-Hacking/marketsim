@@ -24,7 +24,7 @@ import {
 } from '@/types/market';
 
 const INITIAL_PRICE = 100;
-const BASE_INTERVAL_MS = 1000; // 1 bar per second at 1x speed
+const BASE_INTERVAL_MS = 250; // 4 bars per second at 1x speed (0.25s per bar)
 
 export function useMarketSimulation() {
   // Initialize order book and simulator (persist across renders)

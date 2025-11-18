@@ -29,8 +29,8 @@ export class OrderBook {
   // All completed bars
   private bars: Bar[] = [];
 
-  // Bar duration in milliseconds (1 second = 1000ms)
-  private readonly barDuration = 1000;
+  // Bar duration in milliseconds (0.25 seconds = 250ms)
+  private readonly barDuration = 250;
 
   // Next bar start time
   private nextBarTime: number;
