@@ -15,18 +15,17 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi, IPriceLine } from 'lightweight-charts';
-import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, CompletedTrade, Position } from '@/types/market';
+import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, Position } from '@/types/market';
 
 interface TradingChartProps {
   bars: Bar[];
   currentBar: Bar | null;
   showDrawingTools: boolean;
   activeOrders: UserOrder[];
-  tradeHistory: CompletedTrade[];
   positions: Position[];
 }
 
-export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders, tradeHistory, positions }: TradingChartProps) {
+export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders, positions }: TradingChartProps) {
   // Refs to persist chart instances across renders
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -43,7 +42,6 @@ export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders,
 
   // Store order price lines (for managing order visualization)
   const orderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
-  const filledOrderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const positionLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
   /**
@@ -208,45 +206,9 @@ export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders,
   }, [activeOrders]);
 
   /**
-   * Render filled orders as historical markers on the chart
-   * Shows last 10 filled orders with semi-transparent styling
-   */
-  useEffect(() => {
-    if (!seriesRef.current) return;
-
-    // Clear all existing filled order lines
-    filledOrderLinesRef.current.forEach((priceLine) => {
-      seriesRef.current?.removePriceLine(priceLine);
-    });
-    filledOrderLinesRef.current.clear();
-
-    // Show last 10 filled orders
-    const recentTrades = tradeHistory.slice(0, 10);
-
-    recentTrades.forEach((trade) => {
-      // Determine color based on trade side (lighter/more transparent)
-      const color = trade.side === 'buy' ? 'rgba(38, 166, 154, 0.4)' : 'rgba(239, 83, 80, 0.4)';
-
-      // Create label with trade details
-      const label = `FILLED ${trade.size} @ $${trade.price.toFixed(2)}`;
-
-      // Create price line for filled order
-      const priceLine = seriesRef.current!.createPriceLine({
-        price: trade.price,
-        color: color,
-        lineWidth: 1,
-        lineStyle: 3, // Dotted line for filled orders
-        axisLabelVisible: true,
-        title: label,
-      });
-
-      filledOrderLinesRef.current.set(trade.id, priceLine);
-    });
-  }, [tradeHistory]);
-
-  /**
    * Render open positions as solid lines on the chart
    * Shows entry price with real-time P&L updates
+   * Lines are automatically removed when positions are closed
    */
   useEffect(() => {
     if (!seriesRef.current) return;
