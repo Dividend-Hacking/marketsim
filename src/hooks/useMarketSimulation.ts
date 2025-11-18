@@ -2,8 +2,20 @@
  * Market Simulation Hook
  *
  * React hook that manages the market simulation state and provides controls.
- * Initializes the order book and simulator, runs the simulation loop at 1 bar/second,
- * and exposes market data and control functions to components.
+ * Uses DirectPriceSimulator for realistic price generation with GBM + stochastic volatility.
+ *
+ * ARCHITECTURE:
+ * =============
+ * DirectPriceSimulator: Generates prices using industry-standard financial models
+ * - Pure GBM (no target/current price split)
+ * - Heston stochastic volatility (creates clustering)
+ * - Jump diffusion (occasional sharp moves)
+ * - Regime-based drift (bull/bear/sideways)
+ *
+ * SyntheticOrderBook: Creates order book for display purposes only
+ * - NOT used for price discovery
+ * - Generated from current price
+ * - Shows realistic bid/ask spread
  *
  * Usage:
  * const simulation = useMarketSimulation();
@@ -14,8 +26,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { OrderBook } from '@/lib/orderbook';
-import { MarketSimulator } from '@/lib/simulator';
+import { DirectPriceSimulator } from '@/lib/directPriceSimulator';
+import { SyntheticOrderBook } from '@/lib/syntheticOrderBook';
 import {
   SimulationState,
   MarketEvent,
@@ -24,13 +36,18 @@ import {
 } from '@/types/market';
 
 const INITIAL_PRICE = 100;
+const INITIAL_VOLATILITY = 0.15;
 const BASE_INTERVAL_MS = 250; // 4 bars per second at 1x speed (0.25s per bar)
 
 export function useMarketSimulation() {
-  // Initialize order book and simulator (persist across renders)
-  const orderBookRef = useRef<OrderBook>(new OrderBook(INITIAL_PRICE));
-  const simulatorRef = useRef<MarketSimulator>(
-    new MarketSimulator(orderBookRef.current, INITIAL_PRICE)
+  // Initialize DirectPriceSimulator (generates prices with GBM + stochastic volatility)
+  const simulatorRef = useRef<DirectPriceSimulator>(
+    new DirectPriceSimulator(INITIAL_PRICE, INITIAL_VOLATILITY)
+  );
+
+  // Initialize SyntheticOrderBook (display purposes only, not used for price discovery)
+  const syntheticOrderBookRef = useRef<SyntheticOrderBook>(
+    new SyntheticOrderBook(INITIAL_PRICE)
   );
 
   // Simulation state
@@ -111,16 +128,28 @@ export function useMarketSimulation() {
   }, [state.stats]);
 
   /**
-   * Update simulation state from order book and simulator
+   * Update simulation state from DirectPriceSimulator
    */
   const updateState = useCallback(() => {
-    const orderBook = orderBookRef.current;
     const simulator = simulatorRef.current;
+    const syntheticOrderBook = syntheticOrderBookRef.current;
 
-    const bars = orderBook.getBars();
-    const trades = orderBook.getTrades(50);
-    const orderBookSnapshot = orderBook.getSnapshot(10);
-    const currentBar = orderBook.getCurrentBar();
+    // Get data from DirectPriceSimulator
+    const bars = simulator.getBars();
+    const currentPrice = simulator.getCurrentPrice();
+    const currentVolatility = simulator.getCurrentVolatility();
+
+    // Generate synthetic order book for display
+    const orderBookSnapshot = syntheticOrderBook.getSnapshot(currentPrice, currentVolatility);
+
+    // Record synthetic trade if we have a new bar
+    if (bars.length > 0) {
+      const lastBar = bars[bars.length - 1];
+      syntheticOrderBook.recordTrade(lastBar.close, lastBar.volume);
+    }
+
+    const trades = syntheticOrderBook.getTrades(50);
+    const currentBar = bars.length > 0 ? bars[bars.length - 1] : null;
     const stats = calculateStats(bars);
 
     setState((prev) => ({
@@ -136,14 +165,22 @@ export function useMarketSimulation() {
 
   /**
    * Simulation step - called every interval
+   *
+   * DirectPriceSimulator generates:
+   * - New price using GBM + stochastic volatility + jumps
+   * - OHLCV bars from price path
+   * - Volume with realistic price-volume correlation
    */
   const simulationStep = useCallback(() => {
     const simulator = simulatorRef.current;
 
-    // Run one step of simulation
+    // Run one step of DirectPriceSimulator (generates price with GBM)
     simulator.simulateStep();
 
-    // Maybe change regime randomly
+    // Close bar if time elapsed
+    simulator.closeCurrentBar();
+
+    // Maybe change regime randomly (affects drift parameter)
     simulator.maybeChangeRegime();
 
     // Update React state with new data
