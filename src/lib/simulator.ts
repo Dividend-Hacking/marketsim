@@ -27,17 +27,17 @@ export class MarketSimulator {
   private readonly regimeParams: Record<MarketRegime, RegimeParams> = {
     bull: {
       drift: 0.002, // ~0.2% per bar upward drift
-      volatility: 0.015,
+      volatility: 0.12, // Increased from 0.015 for more realistic movement
       orderFlow: 8, // More orders in trending markets
     },
     bear: {
       drift: -0.0015, // ~0.15% per bar downward drift
-      volatility: 0.025, // Higher volatility in bear markets
+      volatility: 0.15, // Increased from 0.025 for higher volatility in bear markets
       orderFlow: 10, // Panic creates more activity
     },
     sideways: {
       drift: 0.0,
-      volatility: 0.01,
+      volatility: 0.08, // Increased from 0.01 for more price variation
       orderFlow: 5, // Less activity in choppy markets
     },
   };
@@ -106,7 +106,7 @@ export class MarketSimulator {
    * They profit from the bid-ask spread and keep the market efficient
    */
   private generateMarketMakerOrders(currentPrice: number, params: RegimeParams): void {
-    const spread = currentPrice * 0.001; // 0.1% spread
+    const spread = currentPrice * 0.005; // 0.5% spread - widened from 0.001 for more realistic market depth
     const orderSize = this.randomBetween(50, 200);
 
     // Post buy orders below current price
@@ -153,8 +153,8 @@ export class MarketSimulator {
     const priceDiff = currentPrice - this.targetPrice;
     const trend = priceDiff / currentPrice;
 
-    // Strong momentum above 0.5% difference
-    if (Math.abs(trend) < 0.005) return;
+    // Strong momentum above 0.2% difference - lowered from 0.005 (0.5%) to allow more activation
+    if (Math.abs(trend) < 0.002) return;
 
     const side = trend > 0 ? 'buy' : 'sell';
     const aggressiveness = Math.abs(trend) * 100; // How far inside the spread to bid
@@ -188,14 +188,14 @@ export class MarketSimulator {
    * Buy when price is below target, sell when above
    */
   private generateMeanReversionOrders(currentPrice: number, params: RegimeParams): void {
-    // Skip some steps randomly
-    if (Math.random() > 0.3) return;
+    // Skip some steps randomly - reduced from 0.3 to 0.7 (30% activation instead of 70%)
+    if (Math.random() > 0.7) return;
 
     const priceDiff = this.targetPrice - currentPrice;
     const deviation = Math.abs(priceDiff / currentPrice);
 
-    // Only trade if price has deviated significantly (>0.3%)
-    if (deviation < 0.003) return;
+    // Only trade if price has deviated significantly - increased from 0.003 to 0.01 (1% instead of 0.3%)
+    if (deviation < 0.01) return;
 
     const side = priceDiff > 0 ? 'buy' : 'sell';
     const size = this.randomBetween(100, 400) * (1 + deviation * 10); // Larger size on bigger deviation
@@ -226,7 +226,7 @@ export class MarketSimulator {
 
     for (let i = 0; i < numOrders; i++) {
       const side = Math.random() > 0.5 ? 'buy' : 'sell';
-      const priceOffset = this.randomBetween(-0.01, 0.01); // ±1%
+      const priceOffset = this.randomBetween(-0.03, 0.03); // ±3% - increased from ±1% for more randomness
       const price = this.roundPrice(currentPrice * (1 + priceOffset));
       const size = this.randomBetween(50, 300);
 
