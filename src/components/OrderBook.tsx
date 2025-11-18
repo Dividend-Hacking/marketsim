@@ -48,7 +48,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
   const maxAskSize = Math.max(...asks.map((a) => a.size), 1);
 
   return (
-    <div className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-4 h-full flex flex-col">
+    <div className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-4 h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-white mb-2">Order Book</h3>
@@ -60,7 +60,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
       </div>
 
       {/* Asks (sells) - shown in reverse order (lowest first) */}
-      <div className="flex-1 overflow-auto mb-2">
+      <div className="h-[calc(50%-32px)] overflow-auto mb-2">
         {asks.slice().reverse().map((level, index) => (
           <div
             key={`ask-${index}`}
@@ -105,7 +105,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
       </div>
 
       {/* Bids (buys) */}
-      <div className="flex-1 overflow-auto mt-2">
+      <div className="h-[calc(50%-32px)] overflow-auto mt-2">
         {bids.map((level, index) => (
           <div
             key={`bid-${index}`}
