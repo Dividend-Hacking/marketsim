@@ -14,7 +14,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData } from 'lightweight-charts';
+import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData } from 'lightweight-charts';
 import { Bar } from '@/types/market';
 
 interface TradingChartProps {
@@ -68,7 +68,7 @@ export function TradingChart({ bars, currentBar }: TradingChartProps) {
     });
 
     // Create candlestick series
-    const candlestickSeries = chart.addCandlestickSeries({
+    const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#26a69a',
       downColor: '#ef5350',
       borderVisible: false,
