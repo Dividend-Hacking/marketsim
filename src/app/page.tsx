@@ -67,6 +67,8 @@ export default function Home() {
               bars={simulation.bars}
               currentBar={simulation.currentBar}
               showDrawingTools={showDrawingTools}
+              activeOrders={simulation.portfolio.activeOrders}
+              tradeHistory={simulation.portfolio.tradeHistory}
             />
           </div>
         </div>

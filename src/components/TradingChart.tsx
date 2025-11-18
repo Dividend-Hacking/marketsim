@@ -14,16 +14,18 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi } from 'lightweight-charts';
-import { Bar, Drawing, DrawingToolType, DrawingPoint } from '@/types/market';
+import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi, IPriceLine } from 'lightweight-charts';
+import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, CompletedTrade } from '@/types/market';
 
 interface TradingChartProps {
   bars: Bar[];
   currentBar: Bar | null;
   showDrawingTools: boolean;
+  activeOrders: UserOrder[];
+  tradeHistory: CompletedTrade[];
 }
 
-export function TradingChart({ bars, currentBar, showDrawingTools }: TradingChartProps) {
+export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders, tradeHistory }: TradingChartProps) {
   // Refs to persist chart instances across renders
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -37,6 +39,10 @@ export function TradingChart({ bars, currentBar, showDrawingTools }: TradingChar
 
   // Store drawing series (line series used to render drawings)
   const drawingSeriesRef = useRef<Map<string, LineSeriesApi<'Line'>>>(new Map());
+
+  // Store order price lines (for managing order visualization)
+  const orderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  const filledOrderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
   /**
    * Initialize the chart on mount
@@ -144,6 +150,97 @@ export function TradingChart({ bars, currentBar, showDrawingTools }: TradingChar
       chartRef.current.timeScale().scrollToRealTime();
     }
   }, [bars, currentBar]);
+
+  /**
+   * Render active orders as price lines on the chart
+   * Shows pending limit and stop orders
+   */
+  useEffect(() => {
+    if (!seriesRef.current) return;
+
+    // Get current order IDs
+    const currentOrderIds = new Set(activeOrders.map((o) => o.id));
+
+    // Remove price lines for orders that no longer exist
+    orderLinesRef.current.forEach((priceLine, orderId) => {
+      if (!currentOrderIds.has(orderId)) {
+        seriesRef.current?.removePriceLine(priceLine);
+        orderLinesRef.current.delete(orderId);
+      }
+    });
+
+    // Add/update price lines for active orders
+    activeOrders.forEach((order) => {
+      // Only show pending orders (not filled ones)
+      if (order.status !== 'pending') return;
+
+      // Get price for the order line
+      const price = order.type === 'limit' ? order.limitPrice : order.stopPrice;
+      if (!price) return;
+
+      // Determine color based on order side
+      const color = order.side === 'buy' ? '#26a69a' : '#ef5350';
+
+      // Create label with order details
+      const label = `${order.type.toUpperCase()} ${order.size} @ $${price.toFixed(2)}`;
+
+      // Check if price line already exists for this order
+      const existingLine = orderLinesRef.current.get(order.id);
+      if (existingLine) {
+        // Update existing price line
+        seriesRef.current?.removePriceLine(existingLine);
+      }
+
+      // Create new price line
+      const priceLine = seriesRef.current!.createPriceLine({
+        price: price,
+        color: color,
+        lineWidth: 2,
+        lineStyle: 2, // Dashed line for pending orders
+        axisLabelVisible: true,
+        title: label,
+      });
+
+      orderLinesRef.current.set(order.id, priceLine);
+    });
+  }, [activeOrders]);
+
+  /**
+   * Render filled orders as historical markers on the chart
+   * Shows last 10 filled orders with semi-transparent styling
+   */
+  useEffect(() => {
+    if (!seriesRef.current) return;
+
+    // Clear all existing filled order lines
+    filledOrderLinesRef.current.forEach((priceLine) => {
+      seriesRef.current?.removePriceLine(priceLine);
+    });
+    filledOrderLinesRef.current.clear();
+
+    // Show last 10 filled orders
+    const recentTrades = tradeHistory.slice(0, 10);
+
+    recentTrades.forEach((trade) => {
+      // Determine color based on trade side (lighter/more transparent)
+      const color = trade.side === 'buy' ? 'rgba(38, 166, 154, 0.4)' : 'rgba(239, 83, 80, 0.4)';
+
+      // Create label with trade details
+      const label = `FILLED ${trade.size} @ $${trade.price.toFixed(2)}`;
+
+      // Create price line for filled order
+      const priceLine = seriesRef.current!.createPriceLine({
+        price: trade.price,
+        color: color,
+        lineWidth: 1,
+        lineStyle: 3, // Dotted line for filled orders
+        axisLabelVisible: true,
+        title: label,
+      });
+
+      filledOrderLinesRef.current.set(trade.id, priceLine);
+    });
+  }, [tradeHistory]);
 
   /**
    * Handle mouse click on chart for drawing
