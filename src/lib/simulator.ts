@@ -162,7 +162,7 @@ export class MarketSimulator {
     // Place aggressive orders that cross the spread - increased from 1-3 to 2-5 for more impact
     const numOrders = Math.floor(this.randomBetween(2, 5));
     for (let i = 0; i < numOrders; i++) {
-      const size = this.randomBetween(100, 500);
+      const size = this.randomBetween(300, 1000); // Increased from 100-500 to break through accumulated passive orders
       let price: number;
 
       if (side === 'buy') {
@@ -199,7 +199,7 @@ export class MarketSimulator {
     if (deviation < 0.003) return;
 
     const side = priceDiff > 0 ? 'buy' : 'sell';
-    const size = this.randomBetween(100, 400) * (1 + deviation * 10); // Larger size on bigger deviation
+    const size = this.randomBetween(300, 800) * (1 + deviation * 10); // Increased from 100-400 to break through passive orders
 
     // Place AGGRESSIVE orders that cross the spread to actively move price toward target
     let price: number;

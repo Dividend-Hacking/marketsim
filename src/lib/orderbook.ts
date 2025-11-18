@@ -213,6 +213,9 @@ export class OrderBook {
   /**
    * Force close the current bar (called at regular intervals)
    * If no trades occurred, creates a bar with lastPrice for all OHLC values
+   *
+   * Also performs periodic order book cleanup every 4 bars (1 second) to prevent
+   * passive order accumulation from freezing price movement
    */
   closeCurrentBar(): void {
     const now = Date.now();
@@ -230,6 +233,11 @@ export class OrderBook {
           close: this.lastPrice,
           volume: 0,
         });
+      }
+
+      // Every 4 bars (1 second), prune deep book orders to prevent accumulation
+      if (this.bars.length % 4 === 0) {
+        this.pruneDeepBookOrders();
       }
 
       this.currentBar = null;
@@ -306,5 +314,36 @@ export class OrderBook {
    */
   getCurrentBar(): Bar | null {
     return this.currentBar;
+  }
+
+  /**
+   * Prune orders that are far from the current market price
+   * This prevents order book accumulation and keeps the market fluid
+   *
+   * Removes orders more than 2% away from the mid price to prevent
+   * stale passive orders from creating an impenetrable wall
+   */
+  private pruneDeepBookOrders(): void {
+    const snapshot = this.getSnapshot(5);
+    const midPrice = snapshot.midPrice;
+
+    // If no valid midPrice, skip pruning
+    if (!midPrice || midPrice === 0) return;
+
+    const threshold = midPrice * 0.02; // 2% threshold
+
+    // Remove bids more than 2% below mid price
+    for (const [price] of Array.from(this.bids.entries())) {
+      if (midPrice - price > threshold) {
+        this.bids.delete(price);
+      }
+    }
+
+    // Remove asks more than 2% above mid price
+    for (const [price] of Array.from(this.asks.entries())) {
+      if (price - midPrice > threshold) {
+        this.asks.delete(price);
+      }
+    }
   }
 }
