@@ -108,7 +108,7 @@ export class OrderFlowSimulator {
       this.informedTraders.push(
         new InformedTrader({
           initialBelief: initialPrice * beliefVariation,
-          threshold: 0.02, // 1% threshold to trade (allows belief to diverge meaningfully)
+          threshold: 0.012, // 1.2% threshold to trade (balanced for volume and choppiness)
           aggression: 0.005, // 0.5% crossing of spread (more aggressive)
           baseSize: 100,
         })
@@ -135,10 +135,10 @@ export class OrderFlowSimulator {
     for (let i = 0; i < 20; i++) {
       this.noiseTraders.push(
         new NoiseTrader({
-          tradeProbability: 0.05, // 5% chance to trade each step
+          tradeProbability: 0.18, // 18% chance to trade each step (increased for volume)
           marketOrderRatio: 0.3, // 30% market orders, 70% limit orders
-          minSize: 10,
-          maxSize: 50,
+          minSize: 30, // Increased from 10 for better volume
+          maxSize: 120, // Increased from 50 for better volume
           priceRange: 0.005, // Place limits within 0.5% of mid
         })
       );
@@ -231,7 +231,7 @@ export class OrderFlowSimulator {
     // Step 6: Informed traders post orders occasionally (not every step)
     for (const trader of this.informedTraders) {
       // Activity affects participation + random element (don't all trade at once)
-      if (Math.random() < activity * 0.1) { // 10% chance per step at normal activity
+      if (Math.random() < activity * 0.35) { // 35% chance per step at normal activity
         const order = trader.generateOrder(midPrice);
         if (order) {
           // Scale size with activity
