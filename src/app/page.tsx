@@ -71,22 +71,9 @@ export default function Home() {
               tradeHistory={simulation.portfolio.tradeHistory}
             />
           </div>
-        </div>
-
-        {/* Right Column - Order Book, Trades, Controls */}
-        <div className="col-span-3 flex flex-col gap-4 h-full">
-          {/* Order Book */}
-          <div className="flex-[45] min-h-0">
-            <OrderBook orderBook={simulation.orderBook} />
-          </div>
-
-          {/* Trades Feed */}
-          <div className="flex-[30] min-h-0">
-            <TradesFeed trades={simulation.trades} />
-          </div>
 
           {/* Simulation Controls */}
-          <div className="flex-[25] min-h-0">
+          <div className="h-96">
             <SimulationControls
               isRunning={simulation.isRunning}
               speed={simulation.speed}
@@ -95,6 +82,19 @@ export default function Home() {
               onSetSpeed={simulation.setSpeed}
               onInjectEvent={simulation.injectEvent}
             />
+          </div>
+        </div>
+
+        {/* Right Column - Order Book and Trades */}
+        <div className="col-span-3 flex flex-col gap-4 h-full">
+          {/* Order Book */}
+          <div className="flex-[60] min-h-0">
+            <OrderBook orderBook={simulation.orderBook} />
+          </div>
+
+          {/* Trades Feed */}
+          <div className="flex-[40] min-h-0">
+            <TradesFeed trades={simulation.trades} />
           </div>
         </div>
       </div>
