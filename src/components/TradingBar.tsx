@@ -69,10 +69,16 @@ export function TradingBar({
       return;
     }
 
-    // Check if user has enough cash
+    // Check if user has enough cash for buy orders (long positions require capital)
     const estimatedCost = quantity * (price || currentPrice);
     if (estimatedCost > portfolio.cash) {
-      alert(`Insufficient funds. Cost: $${estimatedCost.toFixed(2)}, Available: $${portfolio.cash.toFixed(2)}`);
+      const shortfall = estimatedCost - portfolio.cash;
+      alert(
+        `Insufficient funds.\n\n` +
+        `Required: $${estimatedCost.toFixed(2)}\n` +
+        `Available: $${portfolio.cash.toFixed(2)}\n` +
+        `Shortfall: $${shortfall.toFixed(2)}`
+      );
       return;
     }
 
@@ -82,6 +88,9 @@ export function TradingBar({
   /**
    * Handle SELL button click
    * Places a sell order with current settings
+   *
+   * Note: Short sales (opening new short positions) do NOT require cash.
+   * You receive cash when shorting, and need cash later when covering.
    */
   const handleSell = () => {
     const price = orderType === 'limit' ? parseFloat(limitPrice) :
@@ -103,6 +112,9 @@ export function TradingBar({
       alert('Please enter a valid stop price');
       return;
     }
+
+    // No cash requirement for short sales - you receive cash when shorting
+    // Cash is only needed later when covering (buying back) the short position
 
     onPlaceOrder('sell', orderType, quantity, price);
   };

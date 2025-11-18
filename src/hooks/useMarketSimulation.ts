@@ -264,8 +264,13 @@ export function useMarketSimulation() {
       });
 
       // Calculate total equity (cash + position values)
+      // For long positions: add value (you own the shares)
+      // For short positions: subtract value (you owe the shares - it's a liability)
       const positionValue = updatedPositions.reduce((sum, pos) => {
-        return sum + pos.size * pos.currentPrice;
+        const value = pos.side === 'buy'
+          ? pos.size * pos.currentPrice  // Long: you own shares worth this much
+          : -pos.size * pos.currentPrice; // Short: you owe shares worth this much (liability)
+        return sum + value;
       }, 0);
 
       const totalEquity = prev.cash + positionValue;
