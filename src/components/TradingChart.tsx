@@ -440,6 +440,16 @@ export function TradingChart({
           setIsDraggingTPSL(true);
           primitive.setDraggingBox(type);
 
+          // Disable chart panning during drag to prevent interference
+          chartRef.current?.applyOptions({
+            handleScroll: {
+              mouseWheel: true,
+              pressedMouseMove: false,
+              horzTouchDrag: false,
+              vertTouchDrag: false,
+            },
+          });
+
           event.preventDefault();
           return; // Exit early if TP/SL was clicked
         }
@@ -457,6 +467,16 @@ export function TradingChart({
 
           setIsDraggingOrder(true);
           primitive.setDragging(true);
+
+          // Disable chart panning during drag to prevent interference
+          chartRef.current?.applyOptions({
+            handleScroll: {
+              mouseWheel: true,
+              pressedMouseMove: false,
+              horzTouchDrag: false,
+              vertTouchDrag: false,
+            },
+          });
 
           event.preventDefault();
           return; // Exit early if order was clicked
@@ -596,6 +616,16 @@ export function TradingChart({
         tpslDragStartYRef.current = null;
         tpslDragStartPriceRef.current = null;
         setIsDraggingTPSL(false);
+
+        // Re-enable chart panning after drag completes
+        chartRef.current?.applyOptions({
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: true,
+          },
+        });
       }
 
       // Handle order drag completion
@@ -625,6 +655,16 @@ export function TradingChart({
         orderDragStartYRef.current = null;
         orderDragStartPriceRef.current = null;
         setIsDraggingOrder(false);
+
+        // Re-enable chart panning after drag completes
+        chartRef.current?.applyOptions({
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: true,
+          },
+        });
       }
     };
 
