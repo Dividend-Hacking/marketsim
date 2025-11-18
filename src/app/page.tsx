@@ -71,6 +71,7 @@ export default function Home() {
                 positions={simulation.portfolio.positions}
                 onPlaceOrder={simulation.placeOrder}
                 onUpdatePositionTPSL={simulation.updatePositionTPSL}
+                onCancelOrder={simulation.cancelOrder}
               />
             </div>
 

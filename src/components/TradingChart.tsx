@@ -26,7 +26,11 @@ interface TradingChartProps {
   positions: Position[];
   onPlaceOrder?: (side: OrderSide, type: OrderType, size: number, price?: number) => void;
   onUpdatePositionTPSL?: (positionId: string, tpPrice?: number, slPrice?: number) => void;
+  onCancelOrder?: (orderId: string) => void;
 }
+
+// Drag threshold - minimum pixels of movement to distinguish drag from click
+const DRAG_THRESHOLD = 5;
 
 export function TradingChart({
   bars,
@@ -36,6 +40,7 @@ export function TradingChart({
   positions,
   onPlaceOrder,
   onUpdatePositionTPSL,
+  onCancelOrder,
 }: TradingChartProps) {
   // Refs to persist chart instances across renders
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -61,6 +66,8 @@ export function TradingChart({
   // Drag state for TP/SL boxes - use refs to prevent effect re-runs
   const isDraggingRef = useRef(false);
   const draggedBoxRef = useRef<{ positionId: string; type: 'tp' | 'sl' } | null>(null);
+  const dragStartYRef = useRef<number | null>(null); // Track starting Y position for drag threshold
+  const dragStartPriceRef = useRef<number | null>(null); // Track starting price to reset on failed drag
 
   // Keep state for UI reactivity (visual feedback)
   const [isDraggingTPSL, setIsDraggingTPSL] = useState(false);
@@ -410,36 +417,47 @@ export function TradingChart({
    * Handle mouse events for TP/SL box dragging
    */
   useEffect(() => {
-    if (!chartRef.current || !seriesRef.current) return;
+    if (!chartRef.current || !seriesRef.current || !chartContainerRef.current) return;
 
+    const chartContainer = chartContainerRef.current;
     let currentHoveredBox: { positionId: string; type: 'tp' | 'sl' } | null = null;
 
-    // Handle mouse down (start drag)
-    const handleMouseDown = (param: MouseEventParams) => {
-      if (!param.point || !param.hoveredObjectId) return;
+    // Handle mouse down (start drag) - Use DOM event to catch it early
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!chartRef.current || !seriesRef.current) return;
 
-      const hoveredId = param.hoveredObjectId as string;
-      if (hoveredId !== 'tp-box' && hoveredId !== 'sl-box') return;
+      const rect = chartContainer.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
 
-      // Find which position's box was clicked
+      // Check if any TP/SL box was clicked
       for (const [positionId, primitive] of tpslPrimitivesRef.current.entries()) {
-        const hitResult = primitive.hitTest(param.point.x, param.point.y);
-        if (hitResult && hitResult.externalId === hoveredId) {
-          const type = hoveredId === 'tp-box' ? 'tp' : 'sl';
+        const hitResult = primitive.hitTest(x, y);
+        if (hitResult && (hitResult.externalId === 'tp-box' || hitResult.externalId === 'sl-box')) {
+          const type = hitResult.externalId === 'tp-box' ? 'tp' : 'sl';
+
+          // Start drag operation
           isDraggingRef.current = true;
           draggedBoxRef.current = { positionId, type };
+          dragStartYRef.current = y; // Store starting Y position for threshold check
+
+          // Store starting price to reset if drag is too small
+          dragStartPriceRef.current = type === 'tp' ? primitive.getTPPrice() : primitive.getSLPrice();
+
           setIsDraggingTPSL(true); // Update state for UI feedback
           primitive.setDraggingBox(type);
+
+          event.preventDefault(); // Prevent text selection during drag
           break;
         }
       }
     };
 
-    // Handle mouse move (update drag)
+    // Handle mouse move (update hover and drag)
     const handleMouseMove = (param: MouseEventParams) => {
       if (!param.point || !seriesRef.current) return;
 
-      // Update hover state
+      // Update hover state (only when not dragging)
       if (!isDraggingRef.current && param.hoveredObjectId) {
         const hoveredId = param.hoveredObjectId as string;
         if (hoveredId === 'tp-box' || hoveredId === 'sl-box') {
@@ -482,13 +500,13 @@ export function TradingChart({
       }
     };
 
-    // Subscribe to chart events
-    chartRef.current.subscribeClick(handleMouseDown);
+    // Subscribe to chart move events and DOM mousedown
+    chartContainer.addEventListener('mousedown', handleMouseDown);
     chartRef.current.subscribeCrosshairMove(handleMouseMove);
 
-    // Cleanup - use unsubscribe methods with handler references
+    // Cleanup
     return () => {
-      chartRef.current?.unsubscribeClick(handleMouseDown);
+      chartContainer.removeEventListener('mousedown', handleMouseDown);
       chartRef.current?.unsubscribeCrosshairMove(handleMouseMove);
     };
   }, []); // Only run once on mount
@@ -496,28 +514,57 @@ export function TradingChart({
   /**
    * Handle mouse up (end drag) using DOM event
    * Chart API doesn't provide mouseup event, so we use DOM
+   * Includes drag threshold check to distinguish between clicks and drags
    */
   useEffect(() => {
-    const handleMouseUp = () => {
-      if (!isDraggingRef.current || !draggedBoxRef.current || !seriesRef.current) return;
+    const handleMouseUp = (event: MouseEvent) => {
+      if (!isDraggingRef.current || !draggedBoxRef.current || !seriesRef.current || !chartContainerRef.current) return;
 
       const primitive = tpslPrimitivesRef.current.get(draggedBoxRef.current.positionId);
-      if (primitive) {
-        // Get final price
+      if (!primitive) {
+        // Reset state and return
+        isDraggingRef.current = false;
+        draggedBoxRef.current = null;
+        dragStartYRef.current = null;
+        dragStartPriceRef.current = null;
+        setIsDraggingTPSL(false);
+        return;
+      }
+
+      // Calculate movement distance from start position
+      const rect = chartContainerRef.current.getBoundingClientRect();
+      const currentY = event.clientY - rect.top;
+      const startY = dragStartYRef.current ?? currentY;
+      const dragDistance = Math.abs(currentY - startY);
+
+      // Clear dragging visual state
+      primitive.setDraggingBox(null);
+
+      // Check if drag distance exceeds threshold
+      if (dragDistance >= DRAG_THRESHOLD) {
+        // Actual drag - place order at final price
         const finalPrice = draggedBoxRef.current.type === 'tp'
           ? primitive.getTPPrice()
           : primitive.getSLPrice();
 
-        // Clear dragging state
-        primitive.setDraggingBox(null);
-
-        // Place order at final price
         handleTPSLDrop(draggedBoxRef.current.positionId, draggedBoxRef.current.type, finalPrice);
+      } else {
+        // Click or tiny movement - reset box to starting position
+        if (dragStartPriceRef.current !== null) {
+          if (draggedBoxRef.current.type === 'tp') {
+            primitive.setTPPrice(dragStartPriceRef.current);
+          } else {
+            primitive.setSLPrice(dragStartPriceRef.current);
+          }
+        }
       }
 
+      // Reset all drag state
       isDraggingRef.current = false;
       draggedBoxRef.current = null;
-      setIsDraggingTPSL(false); // Update state for UI feedback
+      dragStartYRef.current = null;
+      dragStartPriceRef.current = null;
+      setIsDraggingTPSL(false);
     };
 
     document.addEventListener('mouseup', handleMouseUp);
