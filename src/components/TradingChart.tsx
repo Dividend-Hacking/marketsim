@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi, IPriceLine, MouseEventParams } from 'lightweight-charts';
 import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, Position, OrderSide, OrderType } from '@/types/market';
 import { TPSLBoxesPrimitive } from './TPSLBoxesPrimitive';
+import { OrderLinePrimitive } from './OrderLinePrimitive';
 
 interface TradingChartProps {
   bars: Bar[];
@@ -56,21 +57,28 @@ export function TradingChart({
   // Store drawing series (line series used to render drawings)
   const drawingSeriesRef = useRef<Map<string, LineSeriesApi<'Line'>>>(new Map());
 
-  // Store order price lines (for managing order visualization)
-  const orderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  // Store order primitives (replacing price lines for interactivity)
+  const orderPrimitivesRef = useRef<Map<string, OrderLinePrimitive>>(new Map());
   const positionLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
   // Store TP/SL primitives for each position
   const tpslPrimitivesRef = useRef<Map<string, TPSLBoxesPrimitive>>(new Map());
 
   // Drag state for TP/SL boxes - use refs to prevent effect re-runs
-  const isDraggingRef = useRef(false);
-  const draggedBoxRef = useRef<{ positionId: string; type: 'tp' | 'sl' } | null>(null);
-  const dragStartYRef = useRef<number | null>(null); // Track starting Y position for drag threshold
-  const dragStartPriceRef = useRef<number | null>(null); // Track starting price to reset on failed drag
+  const isDraggingTPSLRef = useRef(false);
+  const draggedTPSLRef = useRef<{ positionId: string; type: 'tp' | 'sl' } | null>(null);
+  const tpslDragStartYRef = useRef<number | null>(null);
+  const tpslDragStartPriceRef = useRef<number | null>(null);
+
+  // Drag state for orders - separate from TP/SL
+  const isDraggingOrderRef = useRef(false);
+  const draggedOrderRef = useRef<string | null>(null); // Order ID being dragged
+  const orderDragStartYRef = useRef<number | null>(null);
+  const orderDragStartPriceRef = useRef<number | null>(null);
 
   // Keep state for UI reactivity (visual feedback)
   const [isDraggingTPSL, setIsDraggingTPSL] = useState(false);
+  const [isDraggingOrder, setIsDraggingOrder] = useState(false);
 
   /**
    * Initialize the chart on mount
@@ -180,56 +188,43 @@ export function TradingChart({
   }, [bars, currentBar]);
 
   /**
-   * Render active orders as price lines on the chart
-   * Shows pending limit and stop orders
+   * Render active orders as draggable primitives
+   * Shows pending limit and stop orders that can be dragged to modify prices
    */
   useEffect(() => {
     if (!seriesRef.current) return;
 
     // Get current order IDs
-    const currentOrderIds = new Set(activeOrders.map((o) => o.id));
+    const currentOrderIds = new Set(activeOrders.filter(o => o.status === 'pending').map(o => o.id));
 
-    // Remove price lines for orders that no longer exist
-    orderLinesRef.current.forEach((priceLine, orderId) => {
+    // Remove primitives for orders that no longer exist
+    orderPrimitivesRef.current.forEach((primitive, orderId) => {
       if (!currentOrderIds.has(orderId)) {
-        seriesRef.current?.removePriceLine(priceLine);
-        orderLinesRef.current.delete(orderId);
+        seriesRef.current?.detachPrimitive(primitive);
+        orderPrimitivesRef.current.delete(orderId);
       }
     });
 
-    // Add/update price lines for active orders
+    // Create/update primitives for active orders
     activeOrders.forEach((order) => {
       // Only show pending orders (not filled ones)
       if (order.status !== 'pending') return;
 
-      // Get price for the order line
+      // Get price for the order
       const price = order.type === 'limit' ? order.limitPrice : order.stopPrice;
       if (!price) return;
 
-      // Determine color based on order side
-      const color = order.side === 'buy' ? '#26a69a' : '#ef5350';
+      let primitive = orderPrimitivesRef.current.get(order.id);
 
-      // Create label with order details
-      const label = `${order.type.toUpperCase()} ${order.size} @ $${price.toFixed(2)}`;
-
-      // Check if price line already exists for this order
-      const existingLine = orderLinesRef.current.get(order.id);
-      if (existingLine) {
-        // Update existing price line
-        seriesRef.current?.removePriceLine(existingLine);
+      if (!primitive) {
+        // Create new primitive for this order
+        primitive = new OrderLinePrimitive(order);
+        seriesRef.current?.attachPrimitive(primitive);
+        orderPrimitivesRef.current.set(order.id, primitive);
+      } else {
+        // Update existing primitive with latest order data
+        primitive.setOrder(order);
       }
-
-      // Create new price line
-      const priceLine = seriesRef.current!.createPriceLine({
-        price: price,
-        color: color,
-        lineWidth: 2,
-        lineStyle: 2, // Dashed line for pending orders
-        axisLabelVisible: true,
-        title: label,
-      });
-
-      orderLinesRef.current.set(order.id, priceLine);
     });
   }, [activeOrders]);
 
@@ -436,19 +431,35 @@ export function TradingChart({
         if (hitResult && (hitResult.externalId === 'tp-box' || hitResult.externalId === 'sl-box')) {
           const type = hitResult.externalId === 'tp-box' ? 'tp' : 'sl';
 
-          // Start drag operation
-          isDraggingRef.current = true;
-          draggedBoxRef.current = { positionId, type };
-          dragStartYRef.current = y; // Store starting Y position for threshold check
+          // Start TP/SL drag operation
+          isDraggingTPSLRef.current = true;
+          draggedTPSLRef.current = { positionId, type };
+          tpslDragStartYRef.current = y;
+          tpslDragStartPriceRef.current = type === 'tp' ? primitive.getTPPrice() : primitive.getSLPrice();
 
-          // Store starting price to reset if drag is too small
-          dragStartPriceRef.current = type === 'tp' ? primitive.getTPPrice() : primitive.getSLPrice();
-
-          setIsDraggingTPSL(true); // Update state for UI feedback
+          setIsDraggingTPSL(true);
           primitive.setDraggingBox(type);
 
-          event.preventDefault(); // Prevent text selection during drag
-          break;
+          event.preventDefault();
+          return; // Exit early if TP/SL was clicked
+        }
+      }
+
+      // Check if any order handle was clicked
+      for (const [orderId, primitive] of orderPrimitivesRef.current.entries()) {
+        const hitResult = primitive.hitTest(x, y);
+        if (hitResult && hitResult.externalId.startsWith('order-handle-')) {
+          // Start order drag operation
+          isDraggingOrderRef.current = true;
+          draggedOrderRef.current = orderId;
+          orderDragStartYRef.current = y;
+          orderDragStartPriceRef.current = primitive.getOrderPrice();
+
+          setIsDraggingOrder(true);
+          primitive.setDragging(true);
+
+          event.preventDefault();
+          return; // Exit early if order was clicked
         }
       }
     };
@@ -457,8 +468,8 @@ export function TradingChart({
     const handleMouseMove = (param: MouseEventParams) => {
       if (!param.point || !seriesRef.current) return;
 
-      // Update hover state (only when not dragging)
-      if (!isDraggingRef.current && param.hoveredObjectId) {
+      // Update hover state for TP/SL boxes (only when not dragging)
+      if (!isDraggingTPSLRef.current && !isDraggingOrderRef.current && param.hoveredObjectId) {
         const hoveredId = param.hoveredObjectId as string;
         if (hoveredId === 'tp-box' || hoveredId === 'sl-box') {
           const type = hoveredId === 'tp-box' ? 'tp' : 'sl';
@@ -476,7 +487,7 @@ export function TradingChart({
             }
           }
         }
-      } else if (!isDraggingRef.current) {
+      } else if (!isDraggingTPSLRef.current && !isDraggingOrderRef.current) {
         // Clear all hover states
         tpslPrimitivesRef.current.forEach((primitive) => {
           primitive.setHoveredBox(null);
@@ -484,18 +495,29 @@ export function TradingChart({
         currentHoveredBox = null;
       }
 
-      // Update position while dragging
-      if (isDraggingRef.current && draggedBoxRef.current) {
+      // Update TP/SL position while dragging
+      if (isDraggingTPSLRef.current && draggedTPSLRef.current) {
         const price = seriesRef.current.coordinateToPrice(param.point.y);
         if (price === null) return;
 
-        const primitive = tpslPrimitivesRef.current.get(draggedBoxRef.current.positionId);
+        const primitive = tpslPrimitivesRef.current.get(draggedTPSLRef.current.positionId);
         if (primitive) {
-          if (draggedBoxRef.current.type === 'tp') {
+          if (draggedTPSLRef.current.type === 'tp') {
             primitive.setTPPrice(price);
           } else {
             primitive.setSLPrice(price);
           }
+        }
+      }
+
+      // Update order position while dragging
+      if (isDraggingOrderRef.current && draggedOrderRef.current) {
+        const price = seriesRef.current.coordinateToPrice(param.point.y);
+        if (price === null) return;
+
+        const primitive = orderPrimitivesRef.current.get(draggedOrderRef.current);
+        if (primitive) {
+          primitive.setOrderPrice(price);
         }
       }
     };
@@ -512,59 +534,98 @@ export function TradingChart({
   }, []); // Only run once on mount
 
   /**
+   * Handle order drag completion
+   * Cancels old order and creates new one at new price
+   */
+  const handleOrderDrop = useCallback((orderId: string, newPrice: number) => {
+    if (!onCancelOrder || !onPlaceOrder) return;
+
+    const order = activeOrders.find((o) => o.id === orderId);
+    if (!order) return;
+
+    // Cancel the old order
+    onCancelOrder(orderId);
+
+    // Create new order at new price
+    onPlaceOrder(order.side, order.type, order.size, newPrice);
+  }, [activeOrders, onCancelOrder, onPlaceOrder]);
+
+  /**
    * Handle mouse up (end drag) using DOM event
    * Chart API doesn't provide mouseup event, so we use DOM
    * Includes drag threshold check to distinguish between clicks and drags
    */
   useEffect(() => {
     const handleMouseUp = (event: MouseEvent) => {
-      if (!isDraggingRef.current || !draggedBoxRef.current || !seriesRef.current || !chartContainerRef.current) return;
+      if (!chartContainerRef.current) return;
 
-      const primitive = tpslPrimitivesRef.current.get(draggedBoxRef.current.positionId);
-      if (!primitive) {
-        // Reset state and return
-        isDraggingRef.current = false;
-        draggedBoxRef.current = null;
-        dragStartYRef.current = null;
-        dragStartPriceRef.current = null;
-        setIsDraggingTPSL(false);
-        return;
-      }
-
-      // Calculate movement distance from start position
       const rect = chartContainerRef.current.getBoundingClientRect();
       const currentY = event.clientY - rect.top;
-      const startY = dragStartYRef.current ?? currentY;
-      const dragDistance = Math.abs(currentY - startY);
 
-      // Clear dragging visual state
-      primitive.setDraggingBox(null);
+      // Handle TP/SL drag completion
+      if (isDraggingTPSLRef.current && draggedTPSLRef.current && seriesRef.current) {
+        const primitive = tpslPrimitivesRef.current.get(draggedTPSLRef.current.positionId);
+        if (primitive) {
+          const startY = tpslDragStartYRef.current ?? currentY;
+          const dragDistance = Math.abs(currentY - startY);
 
-      // Check if drag distance exceeds threshold
-      if (dragDistance >= DRAG_THRESHOLD) {
-        // Actual drag - place order at final price
-        const finalPrice = draggedBoxRef.current.type === 'tp'
-          ? primitive.getTPPrice()
-          : primitive.getSLPrice();
+          primitive.setDraggingBox(null);
 
-        handleTPSLDrop(draggedBoxRef.current.positionId, draggedBoxRef.current.type, finalPrice);
-      } else {
-        // Click or tiny movement - reset box to starting position
-        if (dragStartPriceRef.current !== null) {
-          if (draggedBoxRef.current.type === 'tp') {
-            primitive.setTPPrice(dragStartPriceRef.current);
+          if (dragDistance >= DRAG_THRESHOLD) {
+            // Actual drag - place order
+            const finalPrice = draggedTPSLRef.current.type === 'tp'
+              ? primitive.getTPPrice()
+              : primitive.getSLPrice();
+
+            handleTPSLDrop(draggedTPSLRef.current.positionId, draggedTPSLRef.current.type, finalPrice);
           } else {
-            primitive.setSLPrice(dragStartPriceRef.current);
+            // Click or tiny movement - reset
+            if (tpslDragStartPriceRef.current !== null) {
+              if (draggedTPSLRef.current.type === 'tp') {
+                primitive.setTPPrice(tpslDragStartPriceRef.current);
+              } else {
+                primitive.setSLPrice(tpslDragStartPriceRef.current);
+              }
+            }
           }
         }
+
+        // Reset TP/SL drag state
+        isDraggingTPSLRef.current = false;
+        draggedTPSLRef.current = null;
+        tpslDragStartYRef.current = null;
+        tpslDragStartPriceRef.current = null;
+        setIsDraggingTPSL(false);
       }
 
-      // Reset all drag state
-      isDraggingRef.current = false;
-      draggedBoxRef.current = null;
-      dragStartYRef.current = null;
-      dragStartPriceRef.current = null;
-      setIsDraggingTPSL(false);
+      // Handle order drag completion
+      if (isDraggingOrderRef.current && draggedOrderRef.current && seriesRef.current) {
+        const primitive = orderPrimitivesRef.current.get(draggedOrderRef.current);
+        if (primitive) {
+          const startY = orderDragStartYRef.current ?? currentY;
+          const dragDistance = Math.abs(currentY - startY);
+
+          primitive.setDragging(false);
+
+          if (dragDistance >= DRAG_THRESHOLD) {
+            // Actual drag - modify order
+            const finalPrice = primitive.getOrderPrice();
+            handleOrderDrop(draggedOrderRef.current, finalPrice);
+          } else {
+            // Click or tiny movement - reset
+            if (orderDragStartPriceRef.current !== null) {
+              primitive.setOrderPrice(orderDragStartPriceRef.current);
+            }
+          }
+        }
+
+        // Reset order drag state
+        isDraggingOrderRef.current = false;
+        draggedOrderRef.current = null;
+        orderDragStartYRef.current = null;
+        orderDragStartPriceRef.current = null;
+        setIsDraggingOrder(false);
+      }
     };
 
     document.addEventListener('mouseup', handleMouseUp);
@@ -572,7 +633,7 @@ export function TradingChart({
     return () => {
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [handleTPSLDrop]); // Only handleTPSLDrop needed in dependencies
+  }, [handleTPSLDrop, handleOrderDrop]);
 
   /**
    * Handle mouse click on chart for drawing
