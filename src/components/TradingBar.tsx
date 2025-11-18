@@ -261,8 +261,7 @@ export function TradingBar({
             {/* BUY Button */}
             <button
               onClick={handleBuy}
-              disabled={!isSimulationRunning}
-              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-6 py-1.5 rounded transition-colors"
+              className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-1.5 rounded transition-colors"
             >
               BUY
             </button>
@@ -270,8 +269,7 @@ export function TradingBar({
             {/* SELL Button */}
             <button
               onClick={handleSell}
-              disabled={!isSimulationRunning}
-              className="bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-6 py-1.5 rounded transition-colors"
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-1.5 rounded transition-colors"
             >
               SELL
             </button>
@@ -397,12 +395,11 @@ export function TradingBar({
                 {/* Flip Position Button */}
                 <button
                   onClick={handleFlipPosition}
-                  disabled={!isSimulationRunning}
                   className={`${
                     currentPosition.side === 'buy'
                       ? 'bg-red-600 hover:bg-red-700'
                       : 'bg-green-600 hover:bg-green-700'
-                  } disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded text-sm transition-colors`}
+                  } text-white font-semibold px-4 py-1.5 rounded text-sm transition-colors`}
                 >
                   {currentPosition.side === 'buy' ? '↓ Flip to SHORT' : '↑ Flip to LONG'}
                 </button>
@@ -410,8 +407,7 @@ export function TradingBar({
                 {/* Close All Button */}
                 <button
                   onClick={handleCloseAll}
-                  disabled={!isSimulationRunning}
-                  className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded text-sm transition-colors"
+                  className="bg-orange-600 hover:bg-orange-700 text-white font-semibold px-4 py-1.5 rounded text-sm transition-colors"
                 >
                   ⨯ Close All
                 </button>

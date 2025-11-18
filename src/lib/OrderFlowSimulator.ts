@@ -103,14 +103,14 @@ export class OrderFlowSimulator {
 
     // Create 10 informed traders with correlated beliefs
     // Each has slightly different initial belief (±5% variation)
-    for (let i = 0; i < 10; i++) {
-      const beliefVariation = 0.95 + Math.random() * 0.10; // 0.95 to 1.05
+    for (let i = 0; i < 20; i++) {
+      const beliefVariation = 0.90 + Math.random() * 0.10; // 0.95 to 1.05
       this.informedTraders.push(
         new InformedTrader({
           initialBelief: initialPrice * beliefVariation,
-          threshold: 0.02, // 1.2% threshold to trade (balanced for volume and choppiness)
-          aggression: 0.005, // 0.5% crossing of spread (more aggressive)
-          baseSize: 100,
+          threshold: 0.01, // 1.2% threshold to trade (balanced for volume and choppiness)
+          aggression: 0.01, // 0.5% crossing of spread (more aggressive)
+          baseSize: 200,
         })
       );
     }
@@ -132,14 +132,14 @@ export class OrderFlowSimulator {
     );
 
     // Create 20 noise traders for volume and depth
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 40; i++) {
       this.noiseTraders.push(
         new NoiseTrader({
-          tradeProbability: 0.18, // 18% chance to trade each step (increased for volume)
-          marketOrderRatio: 0.3, // 30% market orders, 70% limit orders
-          minSize: 30, // Increased from 10 for better volume
-          maxSize: 120, // Increased from 50 for better volume
-          priceRange: 0.005, // Place limits within 0.5% of mid
+          tradeProbability: 0.20, // 18% chance to trade each step (increased for volume)
+          marketOrderRatio: 0.5, // 30% market orders, 70% limit orders
+          minSize: 50, // Increased from 10 for better volume
+          maxSize: 100, // Increased from 50 for better volume
+          priceRange: 0.01, // Place limits within 0.5% of mid
         })
       );
     }
@@ -158,7 +158,7 @@ export class OrderFlowSimulator {
       kappa: 2.0,
       theta: 1.0,
       sigmaA: 0.4,
-      minActivity: 0.2,
+      minActivity: 1.0,
       maxActivity: 2.0,
     });
   }
