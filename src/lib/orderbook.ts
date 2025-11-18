@@ -188,7 +188,7 @@ export class OrderBook {
 
       // Create new bar
       this.currentBar = {
-        time: Math.floor(now / 1000), // Unix timestamp in seconds
+        time: now / 1000, // Unix timestamp in seconds (fractional for sub-second bars)
         open: trade.price,
         high: trade.price,
         low: trade.price,
@@ -223,7 +223,7 @@ export class OrderBook {
       } else {
         // No trades in this period, create a flat bar
         this.bars.push({
-          time: Math.floor(now / 1000),
+          time: now / 1000,
           open: this.lastPrice,
           high: this.lastPrice,
           low: this.lastPrice,

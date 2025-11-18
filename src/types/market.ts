@@ -44,10 +44,10 @@ export interface Trade {
 
 /**
  * OHLCV (Open, High, Low, Close, Volume) candlestick bar
- * Represents price action over a time period (1 second in our simulation)
+ * Represents price action over a time period (0.25 seconds in our simulation)
  */
 export interface Bar {
-  time: number; // Unix timestamp (seconds)
+  time: number; // Unix timestamp in seconds (can be fractional for sub-second precision)
   open: number;
   high: number;
   low: number;
