@@ -172,8 +172,8 @@ export function useMarketSimulation() {
     // Close bar after all steps (creates OHLC from actual trades)
     simulator.closeCurrentBar();
 
-    // Maybe change regime randomly (affects informed trader beliefs)
-    simulator.maybeChangeRegime();
+    // Automatic regime switching disabled - market stays in sideways unless user changes it
+    // simulator.maybeChangeRegime();
 
     // Update React state with new data
     updateState();

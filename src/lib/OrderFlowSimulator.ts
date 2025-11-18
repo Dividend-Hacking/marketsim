@@ -528,15 +528,16 @@ export class OrderFlowSimulator {
   }
 
   /**
-   * Randomly switch regime (2% chance per step)
+   * Randomly switch regime (DISABLED)
+   *
+   * Regime changes are now only manual (via user controls or events).
+   * Market stays in sideways (choppy) regime by default unless user changes it.
    */
   maybeChangeRegime(): void {
-    if (Math.random() < 0.02) {
-      const regimes: MarketRegime[] = ['bull', 'bear', 'sideways'];
-      const otherRegimes = regimes.filter((r) => r !== this.regime);
-      const newRegime = otherRegimes[Math.floor(Math.random() * otherRegimes.length)];
-      this.setRegime(newRegime);
-    }
+    // Automatic regime switching disabled
+    // Regime only changes via:
+    // 1. User control (setRegime)
+    // 2. Market events (injectEvent with regime_change)
   }
 
   /**
