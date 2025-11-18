@@ -43,7 +43,7 @@ export default function Home() {
       />
 
       {/* Main Content - Flex container that takes remaining viewport height */}
-      <div className="flex-1 flex flex-col pt-20 p-4 min-h-0">
+      <div className="flex-1 flex flex-col pt-32 p-4 min-h-0">
         {/* Header */}
         <div className="mb-4 flex-shrink-0">
           <h1 className="text-2xl font-bold">Market Simulator</h1>

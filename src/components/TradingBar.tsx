@@ -120,6 +120,43 @@ export function TradingBar({
   };
 
   /**
+   * Handle Close All Positions button click
+   * Closes all open positions at market price
+   */
+  const handleCloseAll = () => {
+    if (portfolio.positions.length === 0) return;
+
+    const positionsList = portfolio.positions
+      .map((p) => `${p.side.toUpperCase()} ${p.size} @ $${p.entryPrice.toFixed(2)}`)
+      .join('\n');
+
+    const confirmed = window.confirm(
+      `Close all positions at market price?\n\n${positionsList}`
+    );
+
+    if (confirmed) {
+      portfolio.positions.forEach((position) => {
+        const oppositeSide = position.side === 'buy' ? 'sell' : 'buy';
+        onPlaceOrder(oppositeSide, 'market', position.size);
+      });
+    }
+  };
+
+  /**
+   * Handle Flip Position button click
+   * Closes current position and opens opposite position of same size
+   */
+  const handleFlipPosition = () => {
+    if (portfolio.positions.length === 0) return;
+
+    const position = portfolio.positions[0]; // First position
+    const oppositeSide = position.side === 'buy' ? 'sell' : 'buy';
+
+    // Place order for 2x the position size to close current and open opposite
+    onPlaceOrder(oppositeSide, 'market', position.size * 2);
+  };
+
+  /**
    * Format currency with proper decimal places
    */
   const formatCurrency = (value: number): string => {
@@ -138,10 +175,39 @@ export function TradingBar({
   const pnlPercentage = ((totalPnL / 100000) * 100).toFixed(2);
   const isProfitable = totalPnL >= 0;
 
+  /**
+   * Get current position summary
+   */
+  const currentPosition = portfolio.positions[0]; // Assume single position for now
+  const hasPosition = portfolio.positions.length > 0;
+
+  /**
+   * Check if current order will only close position (not flip)
+   * This happens when order size equals position size
+   */
+  const getSizeWarning = (): string | null => {
+    if (!currentPosition) return null;
+
+    // Check if quantity matches position size exactly
+    if (quantity !== currentPosition.size) return null;
+
+    // Determine which action would close the position
+    if (currentPosition.side === 'buy') {
+      // User is long, selling same size will close
+      return `⚠️ Warning: Selling ${quantity} will CLOSE your long position.\nTo flip to SHORT, sell ${quantity * 2} shares.`;
+    } else {
+      // User is short, buying same size will cover
+      return `⚠️ Warning: Buying ${quantity} will COVER your short position.\nTo flip to LONG, buy ${quantity * 2} shares.`;
+    }
+  };
+
+  const sizeWarning = getSizeWarning();
+
   return (
     <div className="fixed top-0 left-0 right-0 z-50 bg-[#0a0a0a] border-b border-[#2a2a2a] shadow-lg">
-      <div className="px-6 py-3">
-        <div className="flex items-center justify-between gap-6">
+      <div className="px-6 py-2.5">
+        {/* First Row: Order Entry Controls */}
+        <div className="flex items-center justify-between gap-6 mb-2">
           {/* Left Section: Order Entry Controls */}
           <div className="flex items-center gap-4">
             {/* Order Type Selector */}
@@ -289,6 +355,82 @@ export function TradingBar({
                 <div className="text-blue-400 font-mono text-sm">
                   {portfolio.activeOrders.length}
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Second Row: Position Management */}
+        <div className="flex items-center justify-between gap-6 pt-2 border-t border-[#2a2a2a]">
+          {/* Left Section: Current Position Display */}
+          <div className="flex items-center gap-4">
+            {hasPosition && currentPosition ? (
+              <div
+                className={`px-4 py-1.5 rounded-lg border ${
+                  currentPosition.unrealizedPnL >= 0
+                    ? 'bg-green-900/20 border-green-500/30'
+                    : 'bg-red-900/20 border-red-500/30'
+                }`}
+              >
+                <span className="text-xs text-gray-400 mr-2">Position:</span>
+                <span className={`font-mono text-sm font-semibold ${
+                  currentPosition.side === 'buy' ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {currentPosition.side === 'buy' ? 'LONG' : 'SHORT'} {currentPosition.size}
+                </span>
+                <span className="text-gray-400 text-sm mx-1">@</span>
+                <span className="font-mono text-sm text-white">
+                  ${currentPosition.entryPrice.toFixed(2)}
+                </span>
+                <span className="text-gray-400 text-sm mx-2">|</span>
+                <span className={`font-mono text-sm ${
+                  currentPosition.unrealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {currentPosition.unrealizedPnL >= 0 ? '+' : ''}${currentPosition.unrealizedPnL.toFixed(2)}
+                  <span className="text-xs ml-1">
+                    ({currentPosition.unrealizedPnL >= 0 ? '+' : ''}
+                    {((currentPosition.unrealizedPnL / (currentPosition.entryPrice * currentPosition.size)) * 100).toFixed(2)}%)
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <div className="px-4 py-1.5 rounded-lg border bg-gray-800/20 border-gray-600/30">
+                <span className="text-xs text-gray-400 mr-2">Position:</span>
+                <span className="font-mono text-sm text-gray-500">None (Flat)</span>
+              </div>
+            )}
+
+            {/* Position Management Buttons */}
+            {hasPosition && currentPosition && (
+              <>
+                {/* Flip Position Button */}
+                <button
+                  onClick={handleFlipPosition}
+                  disabled={!isSimulationRunning}
+                  className={`${
+                    currentPosition.side === 'buy'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-green-600 hover:bg-green-700'
+                  } disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded text-sm transition-colors`}
+                >
+                  {currentPosition.side === 'buy' ? '↓ Flip to SHORT' : '↑ Flip to LONG'}
+                </button>
+
+                {/* Close All Button */}
+                <button
+                  onClick={handleCloseAll}
+                  disabled={!isSimulationRunning}
+                  className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded text-sm transition-colors"
+                >
+                  ⨯ Close All
+                </button>
+              </>
+            )}
+
+            {/* Size Warning */}
+            {sizeWarning && (
+              <div className="px-3 py-1.5 rounded bg-yellow-900/20 border border-yellow-600/30">
+                <span className="text-yellow-400 text-xs whitespace-pre-line">{sizeWarning}</span>
               </div>
             )}
           </div>
