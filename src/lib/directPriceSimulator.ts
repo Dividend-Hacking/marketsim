@@ -108,9 +108,11 @@ export class DirectPriceSimulator {
   private readonly SIGMA_V = 0.3; // Volatility of volatility (creates clustering)
 
   // Jump diffusion parameters
-  private readonly JUMP_PROBABILITY = 0.01; // 1% chance per bar (~40 jumps per hour)
+  // With 7 steps per bar @ 4 bars/sec = 100,800 steps/hour
+  // 0.0004 probability = ~40 jumps per hour (realistic frequency)
+  private readonly JUMP_PROBABILITY = 0.0004; // ~40 jumps per hour
   private readonly JUMP_MEAN = 0.0; // Jumps are symmetric (up or down)
-  private readonly JUMP_STD = 0.01; // Jump size ~1% typically
+  private readonly JUMP_STD = 0.005; // Jump size ~0.5% (reduced from 1% for subtlety)
 
   constructor(initialPrice: number = 100, initialVolatility: number = 0.15) {
     this.price = initialPrice;
@@ -180,7 +182,8 @@ export class DirectPriceSimulator {
    * - Exactly like real markets (GARCH-like behavior)
    */
   private updateStochasticVolatility(): void {
-    const dt = 0.25 / (60 * 60 * 24); // 250ms in days (for proper scaling)
+    // With 7 steps per bar, each step represents 250ms/7 ≈ 36ms
+    const dt = (0.25 / 7) / (60 * 60 * 24); // ~36ms in days (for proper scaling)
 
     // Get base volatility from regime
     const baseVol = this.regimeParams[this.regime].volatility;
@@ -221,7 +224,8 @@ export class DirectPriceSimulator {
    * not from artificial autocorrelation. This is the correct approach.
    */
   private generatePriceChange(): number {
-    const dt = 0.25 / (60 * 60 * 24); // 250ms in days
+    // With 7 steps per bar, each step represents 250ms/7 ≈ 36ms
+    const dt = (0.25 / 7) / (60 * 60 * 24); // ~36ms in days
 
     const params = this.regimeParams[this.regime];
 
