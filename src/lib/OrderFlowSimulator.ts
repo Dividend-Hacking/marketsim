@@ -55,9 +55,13 @@ import {
   MarketEvent,
 } from '@/types/market';
 
+interface OrderWithAge extends Order {
+  age: number; // Steps since order was placed
+}
+
 interface OrderBook {
-  bids: Order[]; // Sorted descending by price (best bid first)
-  asks: Order[]; // Sorted ascending by price (best ask first)
+  bids: OrderWithAge[]; // Sorted descending by price (best bid first)
+  asks: OrderWithAge[]; // Sorted ascending by price (best ask first)
 }
 
 export class OrderFlowSimulator {
@@ -74,6 +78,10 @@ export class OrderFlowSimulator {
     asks: [],
   };
 
+  // Track last price for market maker updates
+  private lastMarketMakerPrice: number = 100;
+  private readonly MARKET_MAKER_REFRESH_THRESHOLD = 0.001; // Refresh if price moves 0.1%
+
   // Trade and bar history
   private trades: Trade[] = [];
   private bars: Bar[] = [];
@@ -87,21 +95,21 @@ export class OrderFlowSimulator {
 
   // Timing
   private readonly barDuration = 250; // 250ms bars
-  private readonly dt = (0.25 / 7) / (60 * 60 * 24); // Time step in days (~36ms)
+  private readonly dt = 1 / 252; // 1 trading day per step (252 trading days/year)
 
   constructor(initialPrice: number = 100) {
     this.currentPrice = initialPrice;
     this.currentBarStartTime = Date.now();
 
     // Create 10 informed traders with correlated beliefs
-    // Each has slightly different initial belief (±2% variation)
+    // Each has slightly different initial belief (±5% variation)
     for (let i = 0; i < 10; i++) {
-      const beliefVariation = 0.98 + Math.random() * 0.04; // 0.98 to 1.02
+      const beliefVariation = 0.95 + Math.random() * 0.10; // 0.95 to 1.05
       this.informedTraders.push(
         new InformedTrader({
           initialBelief: initialPrice * beliefVariation,
-          threshold: 0.002, // 0.2% threshold to trade
-          aggression: 0.001, // 0.1% crossing of spread
+          threshold: 0.01, // 1% threshold to trade (allows belief to diverge meaningfully)
+          aggression: 0.005, // 0.5% crossing of spread (more aggressive)
           baseSize: 100,
         })
       );
@@ -198,25 +206,32 @@ export class OrderFlowSimulator {
       }
     }
 
-    // Step 4: Clear old orders and generate new ones
-    // In a real limit order book, we'd cancel and replace strategically
-    // For simplicity, we clear and regenerate each step
-    this.orderBook.bids = [];
-    this.orderBook.asks = [];
+    // Step 4: Age existing orders and cancel stale ones
+    this.ageAndCancelOrders();
 
     const midPrice = this.currentPrice;
 
-    // Generate market maker orders (liquidity providers)
-    for (const mm of this.marketMakers) {
-      const volatilityMultiplier = 1.0 + (activity - 1.0) * 0.5; // Spread widens with activity
-      const orders = mm.generateOrders(midPrice, volatilityMultiplier);
-      this.addOrders(orders);
+    // Step 5: Market makers refresh orders if price moved significantly
+    const priceMovement = Math.abs((midPrice - this.lastMarketMakerPrice) / this.lastMarketMakerPrice);
+    if (priceMovement > this.MARKET_MAKER_REFRESH_THRESHOLD || this.orderBook.bids.length < 5 || this.orderBook.asks.length < 5) {
+      // Cancel all market maker orders (identifiable by id prefix 'mm_')
+      this.orderBook.bids = this.orderBook.bids.filter(o => !o.id.startsWith('mm_'));
+      this.orderBook.asks = this.orderBook.asks.filter(o => !o.id.startsWith('mm_'));
+
+      // Generate fresh market maker orders
+      for (const mm of this.marketMakers) {
+        const volatilityMultiplier = 1.0 + (activity - 1.0) * 0.5; // Spread widens with activity
+        const orders = mm.generateOrders(midPrice, volatilityMultiplier);
+        this.addOrders(orders);
+      }
+
+      this.lastMarketMakerPrice = midPrice;
     }
 
-    // Generate informed trader orders (price discovery)
+    // Step 6: Informed traders post orders occasionally (not every step)
     for (const trader of this.informedTraders) {
-      // Activity affects participation (high activity = more traders active)
-      if (Math.random() < activity) {
+      // Activity affects participation + random element (don't all trade at once)
+      if (Math.random() < activity * 0.1) { // 10% chance per step at normal activity
         const order = trader.generateOrder(midPrice);
         if (order) {
           // Scale size with activity
@@ -226,7 +241,7 @@ export class OrderFlowSimulator {
       }
     }
 
-    // Generate noise trader orders (volume and depth)
+    // Step 7: Noise traders add random orders
     for (const trader of this.noiseTraders) {
       const order = trader.maybeGenerateOrder(midPrice);
       if (order) {
@@ -261,14 +276,55 @@ export class OrderFlowSimulator {
   }
 
   /**
+   * Age existing orders and cancel stale ones
+   *
+   * Orders are canceled if:
+   * - Older than 10 steps (prevents stale orders accumulating)
+   * - Price is >2% away from current market (too far out of the money)
+   */
+  private ageAndCancelOrders(): void {
+    const MAX_AGE = 10; // Cancel orders older than 10 steps
+    const MAX_PRICE_DISTANCE = 0.02; // Cancel orders >2% from mid
+
+    // Age all orders
+    for (const order of this.orderBook.bids) {
+      order.age++;
+    }
+    for (const order of this.orderBook.asks) {
+      order.age++;
+    }
+
+    // Cancel old or far-from-market orders
+    this.orderBook.bids = this.orderBook.bids.filter(order => {
+      if (order.age > MAX_AGE) return false; // Too old
+      const distance = Math.abs((order.price - this.currentPrice) / this.currentPrice);
+      if (distance > MAX_PRICE_DISTANCE) return false; // Too far from market
+      return true;
+    });
+
+    this.orderBook.asks = this.orderBook.asks.filter(order => {
+      if (order.age > MAX_AGE) return false; // Too old
+      const distance = Math.abs((order.price - this.currentPrice) / this.currentPrice);
+      if (distance > MAX_PRICE_DISTANCE) return false; // Too far from market
+      return true;
+    });
+  }
+
+  /**
    * Add orders to order book
    */
   private addOrders(orders: Order[]): void {
     for (const order of orders) {
-      if (order.side === 'buy') {
-        this.orderBook.bids.push(order);
+      // Add age tracking
+      const orderWithAge: OrderWithAge = {
+        ...order,
+        age: 0, // New order
+      };
+
+      if (orderWithAge.side === 'buy') {
+        this.orderBook.bids.push(orderWithAge);
       } else {
-        this.orderBook.asks.push(order);
+        this.orderBook.asks.push(orderWithAge);
       }
     }
 
