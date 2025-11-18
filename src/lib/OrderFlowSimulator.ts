@@ -95,7 +95,7 @@ export class OrderFlowSimulator {
 
   // Timing
   private readonly barDuration = 250; // 250ms bars
-  private readonly dt = 1 / 252; // 1 trading day per step (252 trading days/year)
+  private readonly dt = 1 / (252); // 1 trading day per step (252 trading days/year)
 
   constructor(initialPrice: number = 100) {
     this.currentPrice = initialPrice;
@@ -108,7 +108,7 @@ export class OrderFlowSimulator {
       this.informedTraders.push(
         new InformedTrader({
           initialBelief: initialPrice * beliefVariation,
-          threshold: 0.01, // 1% threshold to trade (allows belief to diverge meaningfully)
+          threshold: 0.02, // 1% threshold to trade (allows belief to diverge meaningfully)
           aggression: 0.005, // 0.5% crossing of spread (more aggressive)
           baseSize: 100,
         })
@@ -195,7 +195,7 @@ export class OrderFlowSimulator {
       const idioShock = this.gaussian();
 
       // Update belief with correlated shocks (90% shared, 10% independent)
-      trader.updateBelief(this.regime, this.dt, sharedShock, idioShock, 0.1);
+      trader.updateBelief(this.regime, this.dt, sharedShock, idioShock, 0.2);
 
       // Apply jump if one occurred
       if (jumpEvent) {
