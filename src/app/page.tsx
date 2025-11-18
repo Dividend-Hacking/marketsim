@@ -72,19 +72,19 @@ export default function Home() {
         </div>
 
         {/* Right Column - Order Book, Trades, Controls */}
-        <div className="col-span-3 flex flex-col gap-4">
+        <div className="col-span-3 flex flex-col gap-4 h-full">
           {/* Order Book */}
-          <div className="h-[45%] min-h-[300px]">
+          <div className="flex-[45] min-h-0">
             <OrderBook orderBook={simulation.orderBook} />
           </div>
 
           {/* Trades Feed */}
-          <div className="h-[30%] min-h-[200px]">
+          <div className="flex-[30] min-h-0">
             <TradesFeed trades={simulation.trades} />
           </div>
 
           {/* Simulation Controls */}
-          <div className="h-[25%] min-h-[200px]">
+          <div className="flex-[25] min-h-0">
             <SimulationControls
               isRunning={simulation.isRunning}
               speed={simulation.speed}

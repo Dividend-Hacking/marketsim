@@ -50,7 +50,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
   return (
     <div className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-4 h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-4">
+      <div className="flex-shrink-0 mb-4">
         <h3 className="text-lg font-semibold text-white mb-2">Order Book</h3>
         <div className="flex justify-between text-sm text-gray-400">
           <span>Price</span>
@@ -60,7 +60,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
       </div>
 
       {/* Asks (sells) - shown in reverse order (lowest first) */}
-      <div className="h-[calc(50%-32px)] overflow-auto mb-2">
+      <div className="flex-1 min-h-0 overflow-auto mb-2">
         {asks.slice().reverse().map((level, index) => (
           <div
             key={`ask-${index}`}
@@ -87,7 +87,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
       </div>
 
       {/* Spread indicator */}
-      <div className="border-t border-b border-[#2a2a2a] py-3 my-2">
+      <div className="flex-shrink-0 border-t border-b border-[#2a2a2a] py-3 my-2">
         <div className="flex justify-between items-center">
           <div className="text-sm">
             <span className="text-gray-400">Spread: </span>
@@ -105,7 +105,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
       </div>
 
       {/* Bids (buys) */}
-      <div className="h-[calc(50%-32px)] overflow-auto mt-2">
+      <div className="flex-1 min-h-0 overflow-auto mt-2">
         {bids.map((level, index) => (
           <div
             key={`bid-${index}`}
