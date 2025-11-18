@@ -53,7 +53,7 @@ export default function Home() {
       </div>
 
       {/* Main Grid Layout */}
-      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-120px)]">
+      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-520px)]">
         {/* Left Column - Chart and Stats */}
         <div className="col-span-9 flex flex-col gap-4">
           {/* Market Stats */}
