@@ -121,25 +121,16 @@ export function TradingBar({
 
   /**
    * Handle Close All Positions button click
-   * Closes all open positions at market price
+   * Closes all open positions at market price without confirmation
    */
   const handleCloseAll = () => {
     if (portfolio.positions.length === 0) return;
 
-    const positionsList = portfolio.positions
-      .map((p) => `${p.side.toUpperCase()} ${p.size} @ $${p.entryPrice.toFixed(2)}`)
-      .join('\n');
-
-    const confirmed = window.confirm(
-      `Close all positions at market price?\n\n${positionsList}`
-    );
-
-    if (confirmed) {
-      portfolio.positions.forEach((position) => {
-        const oppositeSide = position.side === 'buy' ? 'sell' : 'buy';
-        onPlaceOrder(oppositeSide, 'market', position.size);
-      });
-    }
+    // Close all positions by placing opposite-side market orders
+    portfolio.positions.forEach((position) => {
+      const oppositeSide = position.side === 'buy' ? 'sell' : 'buy';
+      onPlaceOrder(oppositeSide, 'market', position.size);
+    });
   };
 
   /**
