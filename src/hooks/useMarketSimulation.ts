@@ -212,11 +212,16 @@ export function useMarketSimulation() {
   /**
    * Check and fill limit/stop orders based on current price
    * Called every simulation step to monitor pending orders
+   *
+   * Note: This function reads from portfolio state and calls executeOrder,
+   * which handles all state updates internally. No direct state mutation needed here.
    */
   const checkAndFillOrders = useCallback((currentPrice: number) => {
+    // Get current portfolio state to check active orders
     setPortfolio((prev) => {
       const ordersToFill: UserOrder[] = [];
 
+      // Find orders that should be filled based on current price
       for (const order of prev.activeOrders) {
         if (order.type === 'limit') {
           // Limit buy fills when price <= limit price
@@ -239,11 +244,18 @@ export function useMarketSimulation() {
         }
       }
 
-      // Execute all triggered orders
-      ordersToFill.forEach((order) => {
-        executeOrder(order, currentPrice);
-      });
+      // Execute all triggered orders outside this callback
+      // Each executeOrder call properly updates state independently
+      if (ordersToFill.length > 0) {
+        // Use setTimeout to execute orders outside of this state update
+        setTimeout(() => {
+          ordersToFill.forEach((order) => {
+            executeOrder(order, currentPrice);
+          });
+        }, 0);
+      }
 
+      // Return unchanged state - executeOrder handles all updates
       return prev;
     });
   }, [executeOrder]);
