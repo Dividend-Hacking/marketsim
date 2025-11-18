@@ -69,18 +69,7 @@ export default function Home() {
               showDrawingTools={showDrawingTools}
               activeOrders={simulation.portfolio.activeOrders}
               tradeHistory={simulation.portfolio.tradeHistory}
-            />
-          </div>
-
-          {/* Simulation Controls */}
-          <div className="h-96">
-            <SimulationControls
-              isRunning={simulation.isRunning}
-              speed={simulation.speed}
-              regime={simulation.regime}
-              onTogglePause={simulation.togglePause}
-              onSetSpeed={simulation.setSpeed}
-              onInjectEvent={simulation.injectEvent}
+              positions={simulation.portfolio.positions}
             />
           </div>
         </div>
@@ -97,6 +86,18 @@ export default function Home() {
             <TradesFeed trades={simulation.trades} />
           </div>
         </div>
+      </div>
+
+      {/* Simulation Controls - Isolated outside grid */}
+      <div className="mt-4 h-96">
+        <SimulationControls
+          isRunning={simulation.isRunning}
+          speed={simulation.speed}
+          regime={simulation.regime}
+          onTogglePause={simulation.togglePause}
+          onSetSpeed={simulation.setSpeed}
+          onInjectEvent={simulation.injectEvent}
+        />
       </div>
       </div>
     </div>

@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi, IPriceLine } from 'lightweight-charts';
-import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, CompletedTrade } from '@/types/market';
+import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, CompletedTrade, Position } from '@/types/market';
 
 interface TradingChartProps {
   bars: Bar[];
@@ -23,9 +23,10 @@ interface TradingChartProps {
   showDrawingTools: boolean;
   activeOrders: UserOrder[];
   tradeHistory: CompletedTrade[];
+  positions: Position[];
 }
 
-export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders, tradeHistory }: TradingChartProps) {
+export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders, tradeHistory, positions }: TradingChartProps) {
   // Refs to persist chart instances across renders
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -43,6 +44,7 @@ export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders,
   // Store order price lines (for managing order visualization)
   const orderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const filledOrderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  const positionLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
   /**
    * Initialize the chart on mount
@@ -241,6 +243,58 @@ export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders,
       filledOrderLinesRef.current.set(trade.id, priceLine);
     });
   }, [tradeHistory]);
+
+  /**
+   * Render open positions as solid lines on the chart
+   * Shows entry price with real-time P&L updates
+   */
+  useEffect(() => {
+    if (!seriesRef.current) return;
+
+    // Get current position IDs
+    const currentPositionIds = new Set(positions.map((p) => p.id));
+
+    // Remove price lines for positions that no longer exist (closed positions)
+    positionLinesRef.current.forEach((priceLine, positionId) => {
+      if (!currentPositionIds.has(positionId)) {
+        seriesRef.current?.removePriceLine(priceLine);
+        positionLinesRef.current.delete(positionId);
+      }
+    });
+
+    // Add/update price lines for open positions
+    positions.forEach((position) => {
+      // Calculate P&L percentage
+      const pnl = position.unrealizedPnL;
+      const pnlPercent = (pnl / (position.entryPrice * position.size)) * 100;
+      const pnlSign = pnl >= 0 ? '+' : '';
+
+      // Determine color based on position side (long = green, short = red)
+      const color = position.side === 'buy' ? '#26a69a' : '#ef5350';
+
+      // Create comprehensive label with all position details
+      const label = `POSITION: ${position.size} @ $${position.entryPrice.toFixed(2)} | P&L: ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPercent.toFixed(2)}%)`;
+
+      // Check if price line already exists for this position
+      const existingLine = positionLinesRef.current.get(position.id);
+      if (existingLine) {
+        // Remove existing line to update it with new P&L
+        seriesRef.current?.removePriceLine(existingLine);
+      }
+
+      // Create new price line with updated P&L
+      const priceLine = seriesRef.current!.createPriceLine({
+        price: position.entryPrice,
+        color: color,
+        lineWidth: 2,
+        lineStyle: 0, // Solid line for open positions (most prominent)
+        axisLabelVisible: true,
+        title: label,
+      });
+
+      positionLinesRef.current.set(position.id, priceLine);
+    });
+  }, [positions]);
 
   /**
    * Handle mouse click on chart for drawing
