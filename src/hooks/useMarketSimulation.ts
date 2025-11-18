@@ -149,7 +149,11 @@ export function useMarketSimulation() {
     }
 
     const trades = syntheticOrderBook.getTrades(50);
-    const currentBar = bars.length > 0 ? bars[bars.length - 1] : null;
+
+    // DirectPriceSimulator only exposes completed bars (no incomplete "current" bar)
+    // Setting to null prevents duplicate bar being added to chart
+    const currentBar = null;
+
     const stats = calculateStats(bars);
 
     setState((prev) => ({
