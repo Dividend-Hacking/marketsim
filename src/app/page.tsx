@@ -72,6 +72,18 @@ export default function Home() {
                 positions={simulation.portfolio.positions}
               />
             </div>
+
+            {/* Simulation Controls */}
+            <div className="h-96 flex-shrink-0">
+              <SimulationControls
+                isRunning={simulation.isRunning}
+                speed={simulation.speed}
+                regime={simulation.regime}
+                onTogglePause={simulation.togglePause}
+                onSetSpeed={simulation.setSpeed}
+                onInjectEvent={simulation.injectEvent}
+              />
+            </div>
           </div>
 
           {/* Right Column - Order Book and Trades */}
@@ -85,20 +97,6 @@ export default function Home() {
             <div className="flex-[40] min-h-0">
               <TradesFeed trades={simulation.trades} />
             </div>
-          </div>
-        </div>
-
-        {/* Simulation Controls - Flex-shrink prevents it from being compressed */}
-        <div className="grid grid-cols-12 gap-4 flex-shrink-0">
-          <div className="col-span-9 h-96">
-            <SimulationControls
-              isRunning={simulation.isRunning}
-              speed={simulation.speed}
-              regime={simulation.regime}
-              onTogglePause={simulation.togglePause}
-              onSetSpeed={simulation.setSpeed}
-              onInjectEvent={simulation.injectEvent}
-            />
           </div>
         </div>
       </div>
