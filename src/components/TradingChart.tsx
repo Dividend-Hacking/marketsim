@@ -58,9 +58,12 @@ export function TradingChart({
   // Store TP/SL primitives for each position
   const tpslPrimitivesRef = useRef<Map<string, TPSLBoxesPrimitive>>(new Map());
 
-  // Drag state for TP/SL boxes
+  // Drag state for TP/SL boxes - use refs to prevent effect re-runs
+  const isDraggingRef = useRef(false);
+  const draggedBoxRef = useRef<{ positionId: string; type: 'tp' | 'sl' } | null>(null);
+
+  // Keep state for UI reactivity (visual feedback)
   const [isDraggingTPSL, setIsDraggingTPSL] = useState(false);
-  const [draggedBox, setDraggedBox] = useState<{ positionId: string; type: 'tp' | 'sl' } | null>(null);
 
   /**
    * Initialize the chart on mount
@@ -423,8 +426,9 @@ export function TradingChart({
         const hitResult = primitive.hitTest(param.point.x, param.point.y);
         if (hitResult && hitResult.externalId === hoveredId) {
           const type = hoveredId === 'tp-box' ? 'tp' : 'sl';
-          setIsDraggingTPSL(true);
-          setDraggedBox({ positionId, type });
+          isDraggingRef.current = true;
+          draggedBoxRef.current = { positionId, type };
+          setIsDraggingTPSL(true); // Update state for UI feedback
           primitive.setDraggingBox(type);
           break;
         }
@@ -436,7 +440,7 @@ export function TradingChart({
       if (!param.point || !seriesRef.current) return;
 
       // Update hover state
-      if (!isDraggingTPSL && param.hoveredObjectId) {
+      if (!isDraggingRef.current && param.hoveredObjectId) {
         const hoveredId = param.hoveredObjectId as string;
         if (hoveredId === 'tp-box' || hoveredId === 'sl-box') {
           const type = hoveredId === 'tp-box' ? 'tp' : 'sl';
@@ -454,7 +458,7 @@ export function TradingChart({
             }
           }
         }
-      } else if (!isDraggingTPSL) {
+      } else if (!isDraggingRef.current) {
         // Clear all hover states
         tpslPrimitivesRef.current.forEach((primitive) => {
           primitive.setHoveredBox(null);
@@ -463,13 +467,13 @@ export function TradingChart({
       }
 
       // Update position while dragging
-      if (isDraggingTPSL && draggedBox) {
+      if (isDraggingRef.current && draggedBoxRef.current) {
         const price = seriesRef.current.coordinateToPrice(param.point.y);
         if (price === null) return;
 
-        const primitive = tpslPrimitivesRef.current.get(draggedBox.positionId);
+        const primitive = tpslPrimitivesRef.current.get(draggedBoxRef.current.positionId);
         if (primitive) {
-          if (draggedBox.type === 'tp') {
+          if (draggedBoxRef.current.type === 'tp') {
             primitive.setTPPrice(price);
           } else {
             primitive.setSLPrice(price);
@@ -479,15 +483,15 @@ export function TradingChart({
     };
 
     // Subscribe to chart events
-    const clickUnsubscribe = chartRef.current.subscribeClick(handleMouseDown);
-    const moveUnsubscribe = chartRef.current.subscribeCrosshairMove(handleMouseMove);
+    chartRef.current.subscribeClick(handleMouseDown);
+    chartRef.current.subscribeCrosshairMove(handleMouseMove);
 
-    // Cleanup
+    // Cleanup - use unsubscribe methods with handler references
     return () => {
-      clickUnsubscribe();
-      moveUnsubscribe();
+      chartRef.current?.unsubscribeClick(handleMouseDown);
+      chartRef.current?.unsubscribeCrosshairMove(handleMouseMove);
     };
-  }, [isDraggingTPSL, draggedBox]);
+  }, []); // Only run once on mount
 
   /**
    * Handle mouse up (end drag) using DOM event
@@ -495,12 +499,12 @@ export function TradingChart({
    */
   useEffect(() => {
     const handleMouseUp = () => {
-      if (!isDraggingTPSL || !draggedBox || !seriesRef.current) return;
+      if (!isDraggingRef.current || !draggedBoxRef.current || !seriesRef.current) return;
 
-      const primitive = tpslPrimitivesRef.current.get(draggedBox.positionId);
+      const primitive = tpslPrimitivesRef.current.get(draggedBoxRef.current.positionId);
       if (primitive) {
         // Get final price
-        const finalPrice = draggedBox.type === 'tp'
+        const finalPrice = draggedBoxRef.current.type === 'tp'
           ? primitive.getTPPrice()
           : primitive.getSLPrice();
 
@@ -508,11 +512,12 @@ export function TradingChart({
         primitive.setDraggingBox(null);
 
         // Place order at final price
-        handleTPSLDrop(draggedBox.positionId, draggedBox.type, finalPrice);
+        handleTPSLDrop(draggedBoxRef.current.positionId, draggedBoxRef.current.type, finalPrice);
       }
 
-      setIsDraggingTPSL(false);
-      setDraggedBox(null);
+      isDraggingRef.current = false;
+      draggedBoxRef.current = null;
+      setIsDraggingTPSL(false); // Update state for UI feedback
     };
 
     document.addEventListener('mouseup', handleMouseUp);
@@ -520,7 +525,7 @@ export function TradingChart({
     return () => {
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDraggingTPSL, draggedBox, handleTPSLDrop]);
+  }, [handleTPSLDrop]); // Only handleTPSLDrop needed in dependencies
 
   /**
    * Handle mouse click on chart for drawing

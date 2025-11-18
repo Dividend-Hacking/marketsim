@@ -215,10 +215,19 @@ export class TPSLBoxesPrimitive implements ISeriesPrimitive<Time> {
   setPosition(position: Position | null) {
     this._position = position;
 
-    // Initialize TP/SL prices to entry price if not already set
+    // Initialize TP/SL prices at different default levels if not already set
     if (position && this._tpPrice === 0) {
-      this._tpPrice = position.tpPrice || position.entryPrice;
-      this._slPrice = position.slPrice || position.entryPrice;
+      const offset = position.entryPrice * 0.02; // 2% offset from entry price
+
+      if (position.side === 'buy') {
+        // Long position: TP above entry, SL below entry
+        this._tpPrice = position.tpPrice || (position.entryPrice + offset);
+        this._slPrice = position.slPrice || (position.entryPrice - offset);
+      } else {
+        // Short position: TP below entry, SL above entry
+        this._tpPrice = position.tpPrice || (position.entryPrice - offset);
+        this._slPrice = position.slPrice || (position.entryPrice + offset);
+      }
     }
 
     this._requestUpdate?.();
