@@ -69,6 +69,8 @@ export default function Home() {
                 showDrawingTools={showDrawingTools}
                 activeOrders={simulation.portfolio.activeOrders}
                 positions={simulation.portfolio.positions}
+                onPlaceOrder={simulation.placeOrder}
+                onUpdatePositionTPSL={simulation.updatePositionTPSL}
               />
             </div>
 

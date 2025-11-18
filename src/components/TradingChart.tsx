@@ -14,8 +14,9 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi, IPriceLine } from 'lightweight-charts';
-import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, Position } from '@/types/market';
+import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi, IPriceLine, MouseEventParams } from 'lightweight-charts';
+import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, Position, OrderSide, OrderType } from '@/types/market';
+import { TPSLBoxesPrimitive } from './TPSLBoxesPrimitive';
 
 interface TradingChartProps {
   bars: Bar[];
@@ -23,9 +24,19 @@ interface TradingChartProps {
   showDrawingTools: boolean;
   activeOrders: UserOrder[];
   positions: Position[];
+  onPlaceOrder?: (side: OrderSide, type: OrderType, size: number, price?: number) => void;
+  onUpdatePositionTPSL?: (positionId: string, tpPrice?: number, slPrice?: number) => void;
 }
 
-export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders, positions }: TradingChartProps) {
+export function TradingChart({
+  bars,
+  currentBar,
+  showDrawingTools,
+  activeOrders,
+  positions,
+  onPlaceOrder,
+  onUpdatePositionTPSL,
+}: TradingChartProps) {
   // Refs to persist chart instances across renders
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -43,6 +54,13 @@ export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders,
   // Store order price lines (for managing order visualization)
   const orderLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const positionLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+
+  // Store TP/SL primitives for each position
+  const tpslPrimitivesRef = useRef<Map<string, TPSLBoxesPrimitive>>(new Map());
+
+  // Drag state for TP/SL boxes
+  const [isDraggingTPSL, setIsDraggingTPSL] = useState(false);
+  const [draggedBox, setDraggedBox] = useState<{ positionId: string; type: 'tp' | 'sl' } | null>(null);
 
   /**
    * Initialize the chart on mount
@@ -257,6 +275,252 @@ export function TradingChart({ bars, currentBar, showDrawingTools, activeOrders,
       positionLinesRef.current.set(position.id, priceLine);
     });
   }, [positions]);
+
+  /**
+   * Manage TP/SL box primitives for each position
+   * Creates draggable boxes for setting take profit and stop loss orders
+   */
+  useEffect(() => {
+    if (!seriesRef.current) return;
+
+    // Get current position IDs
+    const currentPositionIds = new Set(positions.map((p) => p.id));
+
+    // Remove primitives for positions that no longer exist
+    tpslPrimitivesRef.current.forEach((primitive, positionId) => {
+      if (!currentPositionIds.has(positionId)) {
+        seriesRef.current?.detachPrimitive(primitive);
+        tpslPrimitivesRef.current.delete(positionId);
+      }
+    });
+
+    // Create/update primitives for each position
+    positions.forEach((position) => {
+      let primitive = tpslPrimitivesRef.current.get(position.id);
+
+      if (!primitive) {
+        // Create new primitive for this position
+        primitive = new TPSLBoxesPrimitive();
+        seriesRef.current?.attachPrimitive(primitive);
+        tpslPrimitivesRef.current.set(position.id, primitive);
+      }
+
+      // Update primitive with position data
+      primitive.setPosition(position);
+
+      // Initialize TP/SL prices from position if set, otherwise use entry price
+      if (position.tpPrice !== undefined) {
+        primitive.setTPPrice(position.tpPrice);
+      }
+      if (position.slPrice !== undefined) {
+        primitive.setSLPrice(position.slPrice);
+      }
+    });
+  }, [positions]);
+
+  /**
+   * Validate TP/SL price levels based on position side
+   * Returns null if valid, error message if invalid
+   */
+  const validateTPSLPrice = useCallback((
+    position: Position,
+    type: 'tp' | 'sl',
+    price: number
+  ): string | null => {
+    if (position.side === 'buy') {
+      // Long position: TP should be above entry, SL should be below
+      if (type === 'tp' && price <= position.entryPrice) {
+        return `Take Profit must be above entry price ($${position.entryPrice.toFixed(2)}) for long positions`;
+      }
+      if (type === 'sl' && price >= position.entryPrice) {
+        return `Stop Loss must be below entry price ($${position.entryPrice.toFixed(2)}) for long positions`;
+      }
+    } else {
+      // Short position: TP should be below entry, SL should be above
+      if (type === 'tp' && price >= position.entryPrice) {
+        return `Take Profit must be below entry price ($${position.entryPrice.toFixed(2)}) for short positions`;
+      }
+      if (type === 'sl' && price <= position.entryPrice) {
+        return `Stop Loss must be above entry price ($${position.entryPrice.toFixed(2)}) for short positions`;
+      }
+    }
+    return null;
+  }, []);
+
+  /**
+   * Handle TP/SL box drag completion
+   * Creates or updates orders when boxes are dropped
+   */
+  const handleTPSLDrop = useCallback((
+    positionId: string,
+    type: 'tp' | 'sl',
+    price: number
+  ) => {
+    const position = positions.find((p) => p.id === positionId);
+    if (!position || !onPlaceOrder || !onUpdatePositionTPSL) return;
+
+    // Validate price
+    const validationError = validateTPSLPrice(position, type, price);
+    if (validationError) {
+      alert(validationError);
+      // Reset box to entry price
+      const primitive = tpslPrimitivesRef.current.get(positionId);
+      if (primitive) {
+        if (type === 'tp') {
+          primitive.setTPPrice(position.entryPrice);
+        } else {
+          primitive.setSLPrice(position.entryPrice);
+        }
+      }
+      return;
+    }
+
+    // Find any existing TP/SL order for this position
+    const existingOrder = activeOrders.find((order) => {
+      // Check if this is a TP/SL order for the current position
+      const isOppositeOrder = order.side !== position.side;
+      const isTP = type === 'tp' && order.type === 'limit';
+      const isSL = type === 'sl' && order.type === 'stop';
+      const isSameSize = order.size === position.size;
+
+      return isOppositeOrder && (isTP || isSL) && isSameSize;
+    });
+
+    // If existing order exists at a different price, we'll create a new one
+    // (The old one will remain unless manually cancelled)
+
+    // Create the order
+    const orderSide: OrderSide = position.side === 'buy' ? 'sell' : 'buy'; // Opposite side to close
+    const orderType: OrderType = type === 'tp' ? 'limit' : 'stop';
+
+    onPlaceOrder(orderSide, orderType, position.size, price);
+
+    // Update position TP/SL price
+    if (type === 'tp') {
+      onUpdatePositionTPSL(positionId, price, position.slPrice);
+    } else {
+      onUpdatePositionTPSL(positionId, position.tpPrice, price);
+    }
+  }, [positions, activeOrders, onPlaceOrder, onUpdatePositionTPSL, validateTPSLPrice]);
+
+  /**
+   * Handle mouse events for TP/SL box dragging
+   */
+  useEffect(() => {
+    if (!chartRef.current || !seriesRef.current) return;
+
+    let currentHoveredBox: { positionId: string; type: 'tp' | 'sl' } | null = null;
+
+    // Handle mouse down (start drag)
+    const handleMouseDown = (param: MouseEventParams) => {
+      if (!param.point || !param.hoveredObjectId) return;
+
+      const hoveredId = param.hoveredObjectId as string;
+      if (hoveredId !== 'tp-box' && hoveredId !== 'sl-box') return;
+
+      // Find which position's box was clicked
+      for (const [positionId, primitive] of tpslPrimitivesRef.current.entries()) {
+        const hitResult = primitive.hitTest(param.point.x, param.point.y);
+        if (hitResult && hitResult.externalId === hoveredId) {
+          const type = hoveredId === 'tp-box' ? 'tp' : 'sl';
+          setIsDraggingTPSL(true);
+          setDraggedBox({ positionId, type });
+          primitive.setDraggingBox(type);
+          break;
+        }
+      }
+    };
+
+    // Handle mouse move (update drag)
+    const handleMouseMove = (param: MouseEventParams) => {
+      if (!param.point || !seriesRef.current) return;
+
+      // Update hover state
+      if (!isDraggingTPSL && param.hoveredObjectId) {
+        const hoveredId = param.hoveredObjectId as string;
+        if (hoveredId === 'tp-box' || hoveredId === 'sl-box') {
+          const type = hoveredId === 'tp-box' ? 'tp' : 'sl';
+
+          // Find which primitive is hovered
+          for (const [positionId, primitive] of tpslPrimitivesRef.current.entries()) {
+            const hitResult = primitive.hitTest(param.point.x, param.point.y);
+            if (hitResult) {
+              if (!currentHoveredBox || currentHoveredBox.positionId !== positionId || currentHoveredBox.type !== type) {
+                primitive.setHoveredBox(type);
+                currentHoveredBox = { positionId, type };
+              }
+            } else {
+              primitive.setHoveredBox(null);
+            }
+          }
+        }
+      } else if (!isDraggingTPSL) {
+        // Clear all hover states
+        tpslPrimitivesRef.current.forEach((primitive) => {
+          primitive.setHoveredBox(null);
+        });
+        currentHoveredBox = null;
+      }
+
+      // Update position while dragging
+      if (isDraggingTPSL && draggedBox) {
+        const price = seriesRef.current.coordinateToPrice(param.point.y);
+        if (price === null) return;
+
+        const primitive = tpslPrimitivesRef.current.get(draggedBox.positionId);
+        if (primitive) {
+          if (draggedBox.type === 'tp') {
+            primitive.setTPPrice(price);
+          } else {
+            primitive.setSLPrice(price);
+          }
+        }
+      }
+    };
+
+    // Subscribe to chart events
+    const clickUnsubscribe = chartRef.current.subscribeClick(handleMouseDown);
+    const moveUnsubscribe = chartRef.current.subscribeCrosshairMove(handleMouseMove);
+
+    // Cleanup
+    return () => {
+      clickUnsubscribe();
+      moveUnsubscribe();
+    };
+  }, [isDraggingTPSL, draggedBox]);
+
+  /**
+   * Handle mouse up (end drag) using DOM event
+   * Chart API doesn't provide mouseup event, so we use DOM
+   */
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (!isDraggingTPSL || !draggedBox || !seriesRef.current) return;
+
+      const primitive = tpslPrimitivesRef.current.get(draggedBox.positionId);
+      if (primitive) {
+        // Get final price
+        const finalPrice = draggedBox.type === 'tp'
+          ? primitive.getTPPrice()
+          : primitive.getSLPrice();
+
+        // Clear dragging state
+        primitive.setDraggingBox(null);
+
+        // Place order at final price
+        handleTPSLDrop(draggedBox.positionId, draggedBox.type, finalPrice);
+      }
+
+      setIsDraggingTPSL(false);
+      setDraggedBox(null);
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingTPSL, draggedBox, handleTPSLDrop]);
 
   /**
    * Handle mouse click on chart for drawing

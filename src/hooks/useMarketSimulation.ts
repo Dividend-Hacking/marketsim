@@ -352,6 +352,25 @@ export function useMarketSimulation() {
   }, []);
 
   /**
+   * Update TP/SL prices for a position
+   * Called when user drags TP/SL boxes to new price levels
+   */
+  const updatePositionTPSL = useCallback((
+    positionId: string,
+    tpPrice?: number,
+    slPrice?: number
+  ) => {
+    setPortfolio((prev) => ({
+      ...prev,
+      positions: prev.positions.map((pos) =>
+        pos.id === positionId
+          ? { ...pos, tpPrice, slPrice }
+          : pos
+      ),
+    }));
+  }, []);
+
+  /**
    * Calculate market statistics from bars and trades
    */
   const calculateStats = useCallback((bars: Bar[]): MarketStats => {
@@ -533,5 +552,6 @@ export function useMarketSimulation() {
     // Trading functions
     placeOrder,
     cancelOrder,
+    updatePositionTPSL,
   };
 }

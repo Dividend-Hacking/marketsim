@@ -177,6 +177,8 @@ export interface Position {
   currentPrice: number; // Current market price
   unrealizedPnL: number; // Current profit/loss (not yet closed)
   openTimestamp: number; // When position was opened
+  tpPrice?: number; // Take profit price level (if set)
+  slPrice?: number; // Stop loss price level (if set)
 }
 
 /**
