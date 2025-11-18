@@ -2,20 +2,17 @@
  * Market Simulation Hook
  *
  * React hook that manages the market simulation state and provides controls.
- * Uses DirectPriceSimulator for realistic price generation with GBM + stochastic volatility.
+ * Uses OrderFlowSimulator for realistic price generation through order book matching.
  *
  * ARCHITECTURE:
  * =============
- * DirectPriceSimulator: Generates prices using industry-standard financial models
- * - Pure GBM (no target/current price split)
- * - Heston stochastic volatility (creates clustering)
- * - Jump diffusion (occasional sharp moves)
- * - Regime-based drift (bull/bear/sideways)
- *
- * SyntheticOrderBook: Creates order book for display purposes only
- * - NOT used for price discovery
- * - Generated from current price
- * - Shows realistic bid/ask spread
+ * OrderFlowSimulator: Generates prices through agent-based order flow
+ * - Multiple informed traders with correlated GBM beliefs
+ * - Market makers providing liquidity
+ * - Noise traders creating volume
+ * - Jump generator for news shocks
+ * - Order flow generator for volatility clustering
+ * - True price discovery through order book matching
  *
  * Usage:
  * const simulation = useMarketSimulation();
@@ -26,8 +23,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { DirectPriceSimulator } from '@/lib/directPriceSimulator';
-import { SyntheticOrderBook } from '@/lib/syntheticOrderBook';
+import { OrderFlowSimulator } from '@/lib/OrderFlowSimulator';
 import {
   SimulationState,
   MarketEvent,
@@ -40,14 +36,9 @@ const INITIAL_VOLATILITY = 0.15;
 const BASE_INTERVAL_MS = 250; // 4 bars per second at 1x speed (0.25s per bar)
 
 export function useMarketSimulation() {
-  // Initialize DirectPriceSimulator (generates prices with GBM + stochastic volatility)
-  const simulatorRef = useRef<DirectPriceSimulator>(
-    new DirectPriceSimulator(INITIAL_PRICE, INITIAL_VOLATILITY)
-  );
-
-  // Initialize SyntheticOrderBook (display purposes only, not used for price discovery)
-  const syntheticOrderBookRef = useRef<SyntheticOrderBook>(
-    new SyntheticOrderBook(INITIAL_PRICE)
+  // Initialize OrderFlowSimulator (generates prices through order book matching)
+  const simulatorRef = useRef<OrderFlowSimulator>(
+    new OrderFlowSimulator(INITIAL_PRICE)
   );
 
   // Simulation state
@@ -128,29 +119,17 @@ export function useMarketSimulation() {
   }, [state.stats]);
 
   /**
-   * Update simulation state from DirectPriceSimulator
+   * Update simulation state from OrderFlowSimulator
    */
   const updateState = useCallback(() => {
     const simulator = simulatorRef.current;
-    const syntheticOrderBook = syntheticOrderBookRef.current;
 
-    // Get data from DirectPriceSimulator
+    // Get data from OrderFlowSimulator
     const bars = simulator.getBars();
-    const currentPrice = simulator.getCurrentPrice();
-    const currentVolatility = simulator.getCurrentVolatility();
+    const trades = simulator.getTrades(50);
+    const orderBookSnapshot = simulator.getOrderBookSnapshot();
 
-    // Generate synthetic order book for display
-    const orderBookSnapshot = syntheticOrderBook.getSnapshot(currentPrice, currentVolatility);
-
-    // Record synthetic trade if we have a new bar
-    if (bars.length > 0) {
-      const lastBar = bars[bars.length - 1];
-      syntheticOrderBook.recordTrade(lastBar.close, lastBar.volume);
-    }
-
-    const trades = syntheticOrderBook.getTrades(50);
-
-    // DirectPriceSimulator only exposes completed bars (no incomplete "current" bar)
+    // OrderFlowSimulator only exposes completed bars (no incomplete "current" bar)
     // Setting to null prevents duplicate bar being added to chart
     const currentBar = null;
 
@@ -170,30 +149,30 @@ export function useMarketSimulation() {
   /**
    * Simulation step - called every interval
    *
-   * Generates multiple price points per bar to create realistic OHLC variation.
-   * Without multiple steps, each bar would have O=H=L=C (appearing as a dot).
-   *
    * Each step:
-   * - Generates new price using GBM + stochastic volatility + jumps
-   * - Records price in currentBarTrades array
-   * - After all steps, bar is closed with varied OHLC values
+   * - Updates order flow activity (volatility clustering)
+   * - Checks for jump events (news shocks)
+   * - Updates informed trader beliefs (correlated GBM)
+   * - Generates orders from all agents
+   * - Matches orders in order book (price discovery)
+   * - Records trades and creates OHLC bars
    */
   const simulationStep = useCallback(() => {
     const simulator = simulatorRef.current;
 
     // Generate 7 price updates per bar for realistic OHLC variation
     // This creates candlesticks with visible bodies and wicks
-    // Each price point is a proper GBM step with stochastic volatility
+    // Each step processes order flow and matches orders
     const STEPS_PER_BAR = 7;
 
     for (let i = 0; i < STEPS_PER_BAR; i++) {
       simulator.simulateStep();
     }
 
-    // Close bar after all steps (creates OHLC from the 7 price points)
+    // Close bar after all steps (creates OHLC from actual trades)
     simulator.closeCurrentBar();
 
-    // Maybe change regime randomly (affects drift parameter)
+    // Maybe change regime randomly (affects informed trader beliefs)
     simulator.maybeChangeRegime();
 
     // Update React state with new data
