@@ -30,7 +30,7 @@ export default function Home() {
   const [showDrawingTools, setShowDrawingTools] = useState(false);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-black text-white flex flex-col">
       {/* Fixed Trading Bar at Top */}
       <TradingBar
         portfolio={simulation.portfolio}
@@ -42,65 +42,65 @@ export default function Home() {
         showDrawingTools={showDrawingTools}
       />
 
-      {/* Main Content - Add padding-top to account for fixed trading bar */}
-      <div className="pt-20 p-4">
-      {/* Header */}
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold">Market Simulator</h1>
-        <p className="text-sm text-gray-400">
-          Real-time order book-driven price simulation
-        </p>
-      </div>
+      {/* Main Content - Flex container that takes remaining viewport height */}
+      <div className="flex-1 flex flex-col pt-20 p-4 min-h-0">
+        {/* Header */}
+        <div className="mb-4 flex-shrink-0">
+          <h1 className="text-2xl font-bold">Market Simulator</h1>
+          <p className="text-sm text-gray-400">
+            Real-time order book-driven price simulation
+          </p>
+        </div>
 
-      {/* Main Grid Layout */}
-      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-520px)]">
-        {/* Left Column - Chart and Stats */}
-        <div className="col-span-9 flex flex-col gap-4">
-          {/* Market Stats */}
-          <div className="h-32">
-            <MarketStats stats={simulation.stats} />
+        {/* Main Grid Layout - Takes available space */}
+        <div className="grid grid-cols-12 gap-4 flex-1 min-h-0 mb-4">
+          {/* Left Column - Chart and Stats */}
+          <div className="col-span-9 flex flex-col gap-4 min-h-0">
+            {/* Market Stats */}
+            <div className="h-32 flex-shrink-0">
+              <MarketStats stats={simulation.stats} />
+            </div>
+
+            {/* Trading Chart - Takes up remaining space */}
+            <div className="flex-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg overflow-hidden min-h-0">
+              <TradingChart
+                bars={simulation.bars}
+                currentBar={simulation.currentBar}
+                showDrawingTools={showDrawingTools}
+                activeOrders={simulation.portfolio.activeOrders}
+                tradeHistory={simulation.portfolio.tradeHistory}
+                positions={simulation.portfolio.positions}
+              />
+            </div>
           </div>
 
-          {/* Trading Chart - Takes up remaining space */}
-          <div className="flex-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg overflow-hidden">
-            <TradingChart
-              bars={simulation.bars}
-              currentBar={simulation.currentBar}
-              showDrawingTools={showDrawingTools}
-              activeOrders={simulation.portfolio.activeOrders}
-              tradeHistory={simulation.portfolio.tradeHistory}
-              positions={simulation.portfolio.positions}
+          {/* Right Column - Order Book and Trades */}
+          <div className="col-span-3 flex flex-col gap-4 min-h-0">
+            {/* Order Book */}
+            <div className="flex-[60] min-h-0">
+              <OrderBook orderBook={simulation.orderBook} />
+            </div>
+
+            {/* Trades Feed */}
+            <div className="flex-[40] min-h-0">
+              <TradesFeed trades={simulation.trades} />
+            </div>
+          </div>
+        </div>
+
+        {/* Simulation Controls - Flex-shrink prevents it from being compressed */}
+        <div className="grid grid-cols-12 gap-4 flex-shrink-0">
+          <div className="col-span-9 h-96">
+            <SimulationControls
+              isRunning={simulation.isRunning}
+              speed={simulation.speed}
+              regime={simulation.regime}
+              onTogglePause={simulation.togglePause}
+              onSetSpeed={simulation.setSpeed}
+              onInjectEvent={simulation.injectEvent}
             />
           </div>
         </div>
-
-        {/* Right Column - Order Book and Trades */}
-        <div className="col-span-3 flex flex-col gap-4 h-full">
-          {/* Order Book */}
-          <div className="flex-[60] min-h-0">
-            <OrderBook orderBook={simulation.orderBook} />
-          </div>
-
-          {/* Trades Feed */}
-          <div className="flex-[40] min-h-0">
-            <TradesFeed trades={simulation.trades} />
-          </div>
-        </div>
-      </div>
-
-      {/* Simulation Controls - Matches left column width */}
-      <div className="grid grid-cols-12 gap-4 mt-4">
-        <div className="col-span-9 h-96">
-          <SimulationControls
-            isRunning={simulation.isRunning}
-            speed={simulation.speed}
-            regime={simulation.regime}
-            onTogglePause={simulation.togglePause}
-            onSetSpeed={simulation.setSpeed}
-            onInjectEvent={simulation.injectEvent}
-          />
-        </div>
-      </div>
       </div>
     </div>
   );
