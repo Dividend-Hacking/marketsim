@@ -20,6 +20,8 @@ import {
   PrimitiveHoveredItem,
 } from 'lightweight-charts';
 
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
+
 import { Position } from '@/types/market';
 
 /**
@@ -58,36 +60,36 @@ class TPSLBoxesRenderer {
   /**
    * Draw the TP/SL boxes on the canvas
    */
-  draw(target: any) {
+  draw(target: CanvasRenderingTarget2D) {
     if (!this._position) return;
 
-    const ctx = target.context;
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      // Draw TP box (green)
+      if (this._tpY !== null) {
+        this._drawBox(
+          ctx,
+          this._tpY,
+          'TP',
+          '#16a34a', // green-600
+          '#22c55e', // green-500 for hover
+          this._hoveredBox === 'tp' || this._draggingBox === 'tp',
+          this._tpPrice
+        );
+      }
 
-    // Draw TP box (green)
-    if (this._tpY !== null) {
-      this._drawBox(
-        ctx,
-        this._tpY,
-        'TP',
-        '#16a34a', // green-600
-        '#22c55e', // green-500 for hover
-        this._hoveredBox === 'tp' || this._draggingBox === 'tp',
-        this._tpPrice
-      );
-    }
-
-    // Draw SL box (red)
-    if (this._slY !== null) {
-      this._drawBox(
-        ctx,
-        this._slY,
-        'SL',
-        '#dc2626', // red-600
-        '#ef4444', // red-500 for hover
-        this._hoveredBox === 'sl' || this._draggingBox === 'sl',
-        this._slPrice
-      );
-    }
+      // Draw SL box (red)
+      if (this._slY !== null) {
+        this._drawBox(
+          ctx,
+          this._slY,
+          'SL',
+          '#dc2626', // red-600
+          '#ef4444', // red-500 for hover
+          this._hoveredBox === 'sl' || this._draggingBox === 'sl',
+          this._slPrice
+        );
+      }
+    });
   }
 
   /**
