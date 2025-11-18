@@ -52,10 +52,10 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Main Grid Layout - Takes available space */}
-        <div className="grid grid-cols-12 gap-4 flex-1 min-h-0 mb-4">
+        {/* Main Layout - Takes available space */}
+        <div className="flex gap-4 flex-1 min-h-0 mb-4">
           {/* Left Column - Chart and Stats */}
-          <div className="col-span-9 flex flex-col gap-4 min-h-0">
+          <div className="w-[75%] flex flex-col gap-4 min-h-0">
             {/* Market Stats */}
             <div className="h-32 flex-shrink-0">
               <MarketStats stats={simulation.stats} />
@@ -87,7 +87,7 @@ export default function Home() {
           </div>
 
           {/* Right Column - Order Book and Trades */}
-          <div className="col-span-3 flex flex-col gap-4 min-h-0">
+          <div className="w-[25%] flex flex-col gap-4 min-h-0">
             {/* Order Book */}
             <div className="flex-[60] min-h-0">
               <OrderBook orderBook={simulation.orderBook} />
