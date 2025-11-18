@@ -313,7 +313,11 @@ export class DirectPriceSimulator {
 
       // Start new bar
       this.currentBarTrades = [];
-      this.currentBarStartTime = now;
+
+      // FIX: Use incremental timestamps instead of wall-clock time
+      // This guarantees strictly ascending timestamps (no duplicates)
+      // Each bar is exactly barDuration (250ms) after the previous
+      this.currentBarStartTime = this.currentBarStartTime + this.barDuration;
     }
   }
 
