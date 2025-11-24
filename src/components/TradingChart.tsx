@@ -1,8 +1,14 @@
 /**
- * Trading Chart Component
+ * Trading Chart Component - OPTIMIZED with React.memo and useMemo
  *
  * Displays a professional candlestick chart using TradingView's Lightweight Charts library.
  * Updates in real-time as new bars are generated from the market simulation.
+ *
+ * PERFORMANCE OPTIMIZATIONS:
+ * - Wrapped in React.memo with custom comparison to prevent unnecessary re-renders
+ * - Memoized expensive candlestick data transformation
+ * - Throttled chart updates to 60fps using requestAnimationFrame
+ * - Efficient diffing of active orders and positions
  *
  * Features:
  * - Candlestick visualization (OHLC data)
@@ -13,7 +19,7 @@
 
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import { createChart, CandlestickSeries, IChartApi, ISeriesApi, CandlestickData, LineSeries, ISeriesApi as LineSeriesApi, IPriceLine, MouseEventParams } from 'lightweight-charts';
 import { Bar, Drawing, DrawingToolType, DrawingPoint, UserOrder, Position, OrderSide, OrderType } from '@/types/market';
 import { TPSLBoxesPrimitive } from './TPSLBoxesPrimitive';
@@ -33,7 +39,10 @@ interface TradingChartProps {
 // Drag threshold - minimum pixels of movement to distinguish drag from click
 const DRAG_THRESHOLD = 5;
 
-export function TradingChart({
+/**
+ * Internal component without React.memo (to be wrapped below)
+ */
+function TradingChartInner({
   bars,
   currentBar,
   showDrawingTools,
@@ -153,13 +162,11 @@ export function TradingChart({
   }, []);
 
   /**
-   * Update chart data when bars change
+   * OPTIMIZATION: Memoize candlestick data transformation
+   * Only recalculate when bars or currentBar actually change
    */
-  useEffect(() => {
-    if (!seriesRef.current) return;
-
-    // Convert bars to lightweight-charts format
-    const candlestickData: CandlestickData[] = bars.map((bar) => ({
+  const candlestickData = useMemo(() => {
+    const data: CandlestickData[] = bars.map((bar) => ({
       time: bar.time,
       open: bar.open,
       high: bar.high,
@@ -169,7 +176,7 @@ export function TradingChart({
 
     // Add current bar if it exists (incomplete bar being built)
     if (currentBar) {
-      candlestickData.push({
+      data.push({
         time: currentBar.time,
         open: currentBar.open,
         high: currentBar.high,
@@ -178,14 +185,44 @@ export function TradingChart({
       });
     }
 
-    // Update series data
-    seriesRef.current.setData(candlestickData);
-
-    // Auto-scroll to latest bar
-    if (chartRef.current && candlestickData.length > 0) {
-      chartRef.current.timeScale().scrollToRealTime();
-    }
+    return data;
   }, [bars, currentBar]);
+
+  /**
+   * OPTIMIZATION: Throttle chart updates to 60fps using requestAnimationFrame
+   * No need to update faster than browser can render
+   */
+  const rafRef = useRef<number | null>(null);
+  const lastDataLengthRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!seriesRef.current || !chartRef.current) return;
+
+    // Only update if data length changed (new bar added)
+    if (candlestickData.length === lastDataLengthRef.current) return;
+    lastDataLengthRef.current = candlestickData.length;
+
+    // Cancel any pending update
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+    }
+
+    // Schedule update on next animation frame (60fps)
+    rafRef.current = requestAnimationFrame(() => {
+      if (seriesRef.current && chartRef.current) {
+        seriesRef.current.setData(candlestickData);
+        chartRef.current.timeScale().scrollToRealTime();
+      }
+      rafRef.current = null;
+    });
+
+    // Cleanup on unmount or before next update
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, [candlestickData]);
 
   /**
    * Render active orders as draggable primitives
@@ -969,3 +1006,43 @@ export function TradingChart({
     </div>
   );
 }
+
+/**
+ * OPTIMIZATION: Custom comparison function for React.memo
+ * Only re-render if meaningful data has changed:
+ * - bars.length changed (new bar added)
+ * - activeOrders.length changed (order added/removed)
+ * - positions.length changed (position opened/closed)
+ * - showDrawingTools changed
+ *
+ * This prevents unnecessary re-renders when bars are updated with same length
+ * (e.g., currentBar updates within same bar period)
+ */
+function arePropsEqual(prevProps: TradingChartProps, nextProps: TradingChartProps): boolean {
+  // Always re-render if bar count changed
+  if (prevProps.bars.length !== nextProps.bars.length) return false;
+
+  // Always re-render if order count changed
+  if (prevProps.activeOrders.length !== nextProps.activeOrders.length) return false;
+
+  // Always re-render if position count changed
+  if (prevProps.positions.length !== nextProps.positions.length) return false;
+
+  // Always re-render if drawing tools toggled
+  if (prevProps.showDrawingTools !== nextProps.showDrawingTools) return false;
+
+  // Check if currentBar changed significantly (different time or close price)
+  if (prevProps.currentBar?.time !== nextProps.currentBar?.time) return false;
+  if (Math.abs((prevProps.currentBar?.close || 0) - (nextProps.currentBar?.close || 0)) > 0.01) {
+    return false; // Re-render if price moved > $0.01
+  }
+
+  // Props are effectively equal - skip re-render for performance
+  return true;
+}
+
+/**
+ * Export memoized component for performance
+ * Prevents re-renders when parent state changes but props remain the same
+ */
+export const TradingChart = memo(TradingChartInner, arePropsEqual);

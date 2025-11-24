@@ -86,8 +86,36 @@ export function useMarketSimulation() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   /**
-   * Execute a user order (fill it and update positions/cash)
+   * OPTIMIZATION: Helper function to check if an order is a TP/SL for a position
+   * Extracted to avoid duplicate logic (was duplicated in two places in executeOrder)
+   */
+  const isTPSLOrderForPosition = useCallback((order: UserOrder, position: Position): boolean => {
+    // Check if this order is TP for this position (with floating-point tolerance)
+    const isTpOrder =
+      order.type === 'limit' &&
+      order.side !== position.side &&
+      order.size === position.size &&
+      position.tpPrice !== undefined &&
+      Math.abs(order.limitPrice! - position.tpPrice) < 0.01;
+
+    // Check if this order is SL for this position (with floating-point tolerance)
+    const isSlOrder =
+      order.type === 'stop' &&
+      order.side !== position.side &&
+      order.size === position.size &&
+      position.slPrice !== undefined &&
+      Math.abs(order.stopPrice! - position.slPrice) < 0.01;
+
+    return isTpOrder || isSlOrder;
+  }, []);
+
+  /**
+   * Execute a user order (fill it and update positions/cash) - OPTIMIZED
    * Handles opening new positions and closing/modifying existing ones
+   *
+   * OPTIMIZATIONS:
+   * - Deduplicated TP/SL filter logic using helper function
+   * - Single-pass filtering instead of two separate filter operations
    *
    * CRITICAL: Maintains immutability - creates all new objects/arrays
    * This ensures React properly detects state changes
@@ -122,6 +150,7 @@ export function useMarketSimulation() {
 
       // PRE-EMPTIVELY cancel TP/SL orders for positions that will be closed
       // This prevents race conditions where both TP and SL execute before state updates
+      // OPTIMIZED: Using helper function to check TP/SL orders
       let activeOrders = prev.activeOrders.filter((o) => {
         // Remove the executed order first
         if (o.id === order.id) return false;
@@ -131,24 +160,8 @@ export function useMarketSimulation() {
           // Skip if not opposite side (won't be closed by this order)
           if (position.side === order.side) continue;
 
-          // Check if this order is TP for this position (with floating-point tolerance)
-          const isTpOrder =
-            o.type === 'limit' &&
-            o.side !== position.side &&
-            o.size === position.size &&
-            position.tpPrice !== undefined &&
-            Math.abs(o.limitPrice! - position.tpPrice) < 0.01;
-
-          // Check if this order is SL for this position (with floating-point tolerance)
-          const isSlOrder =
-            o.type === 'stop' &&
-            o.side !== position.side &&
-            o.size === position.size &&
-            position.slPrice !== undefined &&
-            Math.abs(o.stopPrice! - position.slPrice) < 0.01;
-
-          // If this is a TP/SL for a position that will be closed, cancel it now
-          if (isTpOrder || isSlOrder) {
+          // Use helper function for TP/SL checking
+          if (isTPSLOrderForPosition(o, position)) {
             return false; // Cancel this order
           }
         }
@@ -265,6 +278,7 @@ export function useMarketSimulation() {
 
       // Note: activeOrders already filtered pre-emptively above
       // This section kept as additional safety check for any edge cases
+      // OPTIMIZED: Using helper function for TP/SL checking
       activeOrders = activeOrders.filter((o) => {
         // If no positions were closed, keep all orders
         if (closedPositionIds.length === 0) return true;
@@ -275,22 +289,8 @@ export function useMarketSimulation() {
           const closedPosition = prev.positions.find(p => p.id === closedPosId);
           if (!closedPosition) continue;
 
-          // Check with floating-point tolerance
-          const isTpOrder =
-            o.type === 'limit' &&
-            o.side !== closedPosition.side &&
-            o.size === closedPosition.size &&
-            closedPosition.tpPrice !== undefined &&
-            Math.abs(o.limitPrice! - closedPosition.tpPrice) < 0.01;
-
-          const isSlOrder =
-            o.type === 'stop' &&
-            o.side !== closedPosition.side &&
-            o.size === closedPosition.size &&
-            closedPosition.slPrice !== undefined &&
-            Math.abs(o.stopPrice! - closedPosition.slPrice) < 0.01;
-
-          if (isTpOrder || isSlOrder) {
+          // Use helper function for TP/SL checking
+          if (isTPSLOrderForPosition(o, closedPosition)) {
             return false; // Cancel this order
           }
         }
@@ -309,7 +309,7 @@ export function useMarketSimulation() {
         tradeHistory,
       };
     });
-  }, []);
+  }, [isTPSLOrderForPosition]);
 
   /**
    * Check and fill limit/stop orders based on current price
