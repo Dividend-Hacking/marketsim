@@ -622,26 +622,40 @@ export function useMarketSimulation() {
           if (payload) {
             const { bars, trades, orderBook, regime } = payload;
 
-            // Calculate stats from bars (use ref to get latest function)
-            const stats = calculateStatsRef.current(bars);
+            // Check if a new bar was created (bar closed)
+            // This throttles order book updates to match chart frequency
+            setState((prev) => {
+              const barsChanged = bars.length !== prev.bars.length;
 
-            // Update simulation state
-            setState((prev) => ({
-              ...prev,
-              currentBar: null, // OrderFlowSimulator only exposes completed bars
-              bars,
-              trades,
-              orderBook,
-              stats,
-              regime,
-            }));
+              if (barsChanged) {
+                // Bar closed - full state update including order book
+                const stats = calculateStatsRef.current(bars);
 
-            // Update portfolio based on current price (use refs to get latest functions)
-            if (bars.length > 0) {
-              const currentPrice = bars[bars.length - 1].close;
-              checkAndFillOrdersRef.current(currentPrice);
-              updatePortfolioValueRef.current(currentPrice);
-            }
+                // Update portfolio based on current price
+                if (bars.length > 0) {
+                  const currentPrice = bars[bars.length - 1].close;
+                  checkAndFillOrdersRef.current(currentPrice);
+                  updatePortfolioValueRef.current(currentPrice);
+                }
+
+                return {
+                  ...prev,
+                  currentBar: null, // OrderFlowSimulator only exposes completed bars
+                  bars,
+                  trades,
+                  orderBook, // ← Only update order book when bar closes
+                  stats,
+                  regime,
+                };
+              } else {
+                // Sub-step within bar - only update trades (skip order book)
+                // This prevents order book from "racing ahead" of chart
+                return {
+                  ...prev,
+                  trades, // Keep trades updated for real-time feed
+                };
+              }
+            });
           }
           break;
 
