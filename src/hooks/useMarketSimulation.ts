@@ -622,21 +622,22 @@ export function useMarketSimulation() {
           if (payload) {
             const { bars, trades, orderBook, regime } = payload;
 
-            // Check if a new bar was created (bar closed)
-            // This throttles order book updates to match chart frequency
+            // ALWAYS update portfolio on every worker message (4x per second)
+            // This ensures responsive order fills and live P&L updates
+            if (bars.length > 0) {
+              const currentPrice = bars[bars.length - 1].close;
+              checkAndFillOrdersRef.current(currentPrice);
+              updatePortfolioValueRef.current(currentPrice);
+            }
+
+            // CONDITIONALLY update UI state based on bar changes
+            // This throttles order book/chart updates to prevent visual mismatch
             setState((prev) => {
               const barsChanged = bars.length !== prev.bars.length;
 
               if (barsChanged) {
                 // Bar closed - full state update including order book
                 const stats = calculateStatsRef.current(bars);
-
-                // Update portfolio based on current price
-                if (bars.length > 0) {
-                  const currentPrice = bars[bars.length - 1].close;
-                  checkAndFillOrdersRef.current(currentPrice);
-                  updatePortfolioValueRef.current(currentPrice);
-                }
 
                 return {
                   ...prev,
