@@ -34,7 +34,7 @@ let simulator: OrderFlowSimulator | null = null;
 let intervalId: number | null = null;
 let isRunning = false;
 let currentSpeed = 1.0;
-const BASE_INTERVAL_MS = 250; // 4 bars per second at 1x speed
+const BASE_INTERVAL_MS = 100; // 10 updates per second at 1x speed (responsive updates)
 const STEPS_PER_BAR = 12; // Sub-steps for smooth price generation
 
 /**

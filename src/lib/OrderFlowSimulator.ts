@@ -249,8 +249,8 @@ export class OrderFlowSimulator {
   private tradeIdCounter: number = 0;
   private currentPrice: number; // Last trade price (for initialization only)
 
-  // Timing - OPTIMIZED for realistic liquid stock appearance
-  private readonly barDuration = 1000; // 1000ms (1 second) bars - smooth, realistic bars
+  // Timing - OPTIMIZED for responsive simulation speed
+  private readonly barDuration = 250; // 250ms bars - fast, responsive updates (4 bars/sec at 1x)
   private readonly dt = 1 / (252); // 1 trading day per step (252 trading days/year)
 
   constructor(initialPrice: number = 100) {
