@@ -52,8 +52,6 @@ function calculateTransactionCosts(size: number, price: number): number {
   return commission + exchangeFee + secFee;
 }
 
-'use client';
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { OrderFlowSimulator } from '@/lib/OrderFlowSimulator';
 import {
