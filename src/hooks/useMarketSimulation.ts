@@ -577,7 +577,27 @@ export function useMarketSimulation() {
   }, [state.stats]);
 
   /**
+   * Refs to store latest callback functions
+   * This prevents worker from being recreated on every state update
+   */
+  const calculateStatsRef = useRef(calculateStats);
+  const checkAndFillOrdersRef = useRef(checkAndFillOrders);
+  const updatePortfolioValueRef = useRef(updatePortfolioValue);
+
+  /**
+   * Keep refs synced with latest callback functions
+   * Runs on every render to ensure refs always have current functions
+   */
+  useEffect(() => {
+    calculateStatsRef.current = calculateStats;
+    checkAndFillOrdersRef.current = checkAndFillOrders;
+    updatePortfolioValueRef.current = updatePortfolioValue;
+  });
+
+  /**
    * Initialize Web Worker and set up message handler
+   * CRITICAL: Empty dependency array ensures worker is only created ONCE on mount
+   * Worker persists throughout component lifecycle, accumulating bars correctly
    */
   useEffect(() => {
     // Create worker
@@ -602,8 +622,8 @@ export function useMarketSimulation() {
           if (payload) {
             const { bars, trades, orderBook, regime } = payload;
 
-            // Calculate stats from bars
-            const stats = calculateStats(bars);
+            // Calculate stats from bars (use ref to get latest function)
+            const stats = calculateStatsRef.current(bars);
 
             // Update simulation state
             setState((prev) => ({
@@ -616,11 +636,11 @@ export function useMarketSimulation() {
               regime,
             }));
 
-            // Update portfolio based on current price
+            // Update portfolio based on current price (use refs to get latest functions)
             if (bars.length > 0) {
               const currentPrice = bars[bars.length - 1].close;
-              checkAndFillOrders(currentPrice);
-              updatePortfolioValue(currentPrice);
+              checkAndFillOrdersRef.current(currentPrice);
+              updatePortfolioValueRef.current(currentPrice);
             }
           }
           break;
@@ -644,7 +664,7 @@ export function useMarketSimulation() {
     return () => {
       worker.terminate();
     };
-  }, [calculateStats, checkAndFillOrders, updatePortfolioValue]);
+  }, []); // Empty deps - worker created once on mount, never recreated
 
   /**
    * Control functions - send commands to worker
