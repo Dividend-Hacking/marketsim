@@ -41,11 +41,11 @@ export class InformedTrader {
   // Regime-specific GBM parameters
   private readonly REGIME_PARAMS = {
     bull: {
-      drift: 0.0005, // +0.05% per step (subtle upward bias)
+      drift: 0.003, // +0.3% per step (6x stronger) = ~2% per hour → Growth stock behavior
       volatility: 0.12,
     },
     bear: {
-      drift: -0.0004, // -0.04% per step (subtle downward bias)
+      drift: -0.0025, // -0.25% per step (6x stronger) = ~-1.7% per hour
       volatility: 0.15,
     },
     sideways: {
@@ -90,6 +90,11 @@ export class InformedTrader {
 
     // Update belief (multiplicative for percentage changes)
     this.belief *= 1 + driftComponent + volatilityComponent;
+
+    // Add fundamental growth component (like earnings growth for tech stocks)
+    // 20% annual growth rate → ~0.08% per day → scales with dt
+    const fundamentalGrowth = 0.20 / 252; // 252 trading days per year
+    this.belief *= 1 + fundamentalGrowth * dt;
 
     // Ensure belief stays positive
     this.belief = Math.max(0.01, this.belief);

@@ -81,7 +81,7 @@ export function useMarketSimulation() {
   const [state, setState] = useState<SimulationState>({
     isRunning: true,
     speed: 1.0,
-    regime: 'sideways',
+    regime: 'bull', // DEFAULT BULL: Growth stocks trend upward (like AAPL, TSLA)
     currentBar: null,
     bars: [],
     trades: [],
