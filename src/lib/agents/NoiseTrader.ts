@@ -79,8 +79,8 @@ export class NoiseTrader {
       // Market order: price crosses spread to ensure immediate execution
       // Buy orders slightly above mid, sell orders slightly below mid
       price = side === 'buy'
-        ? currentPrice * 1.01  // Buy 1% above mid (aggressive)
-        : currentPrice * 0.99; // Sell 1% below mid (aggressive)
+        ? currentPrice * 1.003  // Buy 0.3% above mid (less aggressive to reduce price impact)
+        : currentPrice * 0.997; // Sell 0.3% below mid (less aggressive to reduce price impact)
     } else {
       // Limit order: price within range of mid (may or may not execute)
       const offset = this.config.priceRange * this.randomBetween(0.1, 1.0);

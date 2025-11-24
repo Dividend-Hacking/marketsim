@@ -37,6 +37,7 @@ interface InformedTraderConfig {
 export class InformedTrader {
   private belief: number; // Private valuation (evolves via GBM)
   private config: InformedTraderConfig;
+  private readonly initialBelief: number; // Store initial belief for mean reversion
 
   // Regime-specific GBM parameters
   private readonly REGIME_PARAMS = {
@@ -49,13 +50,14 @@ export class InformedTrader {
       volatility: 0.15,
     },
     sideways: {
-      drift: 0.0, // Pure random walk
+      drift: 0.0005, // Slight upward bias (~12% annual growth)
       volatility: 0.10,
     },
   };
 
   constructor(config: InformedTraderConfig) {
     this.belief = config.initialBelief;
+    this.initialBelief = config.initialBelief; // Store for mean reversion
     this.config = config;
   }
 
@@ -95,6 +97,14 @@ export class InformedTrader {
     // 20% annual growth rate → ~0.08% per day → scales with dt
     const fundamentalGrowth = 0.20 / 252; // 252 trading days per year
     this.belief *= 1 + fundamentalGrowth * dt;
+
+    // Add weak mean reversion to keep price anchored near starting point
+    // This prevents price from drifting too far from initial value
+    // Very weak force (0.5% per step) - only acts on large deviations
+    const meanReversionStrength = 0.005;
+    const deviation = this.belief - this.initialBelief;
+    const meanReversionComponent = -meanReversionStrength * deviation * dt;
+    this.belief += meanReversionComponent;
 
     // Ensure belief stays positive
     this.belief = Math.max(0.01, this.belief);

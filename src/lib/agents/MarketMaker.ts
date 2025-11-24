@@ -119,9 +119,10 @@ export class MarketMaker {
       this.adverseSelectionCooldown--;
     }
 
-    // INVENTORY SKEW - Calculate position-based adjustments (0-30% of spread)
+    // INVENTORY SKEW - Calculate position-based adjustments (0-15% of spread)
+    // Reduced from 30% to prevent excessive directional pressure
     const inventoryRatio = Math.max(-1, Math.min(1, this.inventory / this.maxInventory));
-    const maxSkew = 0.30; // Maximum 30% skew
+    const maxSkew = 0.15; // Maximum 15% skew (more balanced)
     const inventorySkew = inventoryRatio * maxSkew;
 
     // When long (positive inventory), we want to sell:
@@ -132,8 +133,9 @@ export class MarketMaker {
     const askSkew = inventorySkew; // Positive when long (wider), negative when short (tighter)
 
     // SIZE ADJUSTMENT - Reduce size on heavy side to limit further exposure
-    const bidSizeMultiplier = inventoryRatio > 0 ? (1 - Math.abs(inventoryRatio) * 0.4) : 1.0;
-    const askSizeMultiplier = inventoryRatio < 0 ? (1 - Math.abs(inventoryRatio) * 0.4) : 1.0;
+    // Reduced from 40% to 20% for more balanced behavior
+    const bidSizeMultiplier = inventoryRatio > 0 ? (1 - Math.abs(inventoryRatio) * 0.2) : 1.0;
+    const askSizeMultiplier = inventoryRatio < 0 ? (1 - Math.abs(inventoryRatio) * 0.2) : 1.0;
 
     // POSITION LIMIT CHECK - Don't post orders if at max inventory
     const canBuy = this.inventory < this.maxInventory * 0.9; // Stop buying at 90% of limit
