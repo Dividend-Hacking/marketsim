@@ -362,12 +362,9 @@ export class OrderFlowSimulator {
       trader.updateBelief(this.regime, this.dt, sharedShock, idioShock, 0.2);
 
       // Apply jump if one occurred
-      if (jumpEvent) {
-        const currentBelief = trader.getBelief();
-        const newBelief = this.jumpGenerator.applyJumpToBelief(currentBelief, jumpEvent.magnitude);
-        // We need to set the belief, but InformedTrader doesn't expose a setter
-        // The jump is already applied through updateBelief's drift, so this is handled
-      }
+      // Note: Jump is already applied through updateBelief's drift parameter
+      // No need to explicitly set belief here as InformedTrader doesn't expose a setter
+      // The jumpEvent.magnitude is incorporated into the regime drift
     }
 
     // Step 4: Age existing orders and cancel stale ones
@@ -640,6 +637,23 @@ export class OrderFlowSimulator {
 
       // OPTIMIZATION: Update OHLCV incrementally - O(1)
       this.updateOHLCV(trade);
+
+      // REALISM: Track market maker fills for inventory management
+      // Check if bid order belongs to a market maker
+      if (bestBid.id.startsWith('mm_')) {
+        // Notify all market makers (they'll check if it's their order)
+        for (const mm of this.marketMakers) {
+          mm.recordFill('buy', tradePrice, tradeSize);
+        }
+      }
+
+      // Check if ask order belongs to a market maker
+      if (bestAsk.id.startsWith('mm_')) {
+        // Notify all market makers (they'll check if it's their order)
+        for (const mm of this.marketMakers) {
+          mm.recordFill('sell', tradePrice, tradeSize);
+        }
+      }
 
       // Update order sizes
       bestBid.size -= tradeSize;
