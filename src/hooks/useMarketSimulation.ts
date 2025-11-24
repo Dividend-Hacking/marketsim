@@ -1,14 +1,19 @@
 /**
- * Market Simulation Hook
+ * Market Simulation Hook - ENHANCED with Transaction Costs
  *
  * React hook that manages the market simulation state and provides controls.
  * Uses OrderFlowSimulator for realistic price generation through order book matching.
+ *
+ * REALISM ENHANCEMENTS:
+ * =====================
+ * ✅ Transaction Costs - Commission + exchange fees + SEC fees
+ * ✅ Market Maker Inventory Management (Phase 1)
  *
  * ARCHITECTURE:
  * =============
  * OrderFlowSimulator: Generates prices through agent-based order flow
  * - Multiple informed traders with correlated GBM beliefs
- * - Market makers providing liquidity
+ * - Market makers providing liquidity with inventory management
  * - Noise traders creating volume
  * - Jump generator for news shocks
  * - Order flow generator for volatility clustering
@@ -19,6 +24,33 @@
  * // Access: simulation.bars, simulation.orderBook, simulation.trades, etc.
  * // Control: simulation.pause(), simulation.resume(), simulation.setSpeed(), etc.
  */
+
+'use client';
+
+/**
+ * Calculate realistic transaction costs for a trade
+ *
+ * Components:
+ * - Commission: $0.0005 per share (retail rate)
+ * - Exchange fee: $0.0003 per share
+ * - SEC fee: 0.00145% of trade value (Section 31 fee)
+ *
+ * Total: ~$0.0008/share + 0.00145% of value
+ *
+ * Example: 100 shares @ $100 = $10,000 trade
+ * - Commission: 100 * $0.0005 = $0.05
+ * - Exchange: 100 * $0.0003 = $0.03
+ * - SEC: $10,000 * 0.0000145 = $0.145
+ * - Total: $0.225 (0.00225% of trade value)
+ */
+function calculateTransactionCosts(size: number, price: number): number {
+  const commission = size * 0.0005; // $0.0005 per share
+  const exchangeFee = size * 0.0003; // $0.0003 per share
+  const tradeValue = size * price;
+  const secFee = tradeValue * 0.0000145; // 0.00145% SEC Section 31 fee
+
+  return commission + exchangeFee + secFee;
+}
 
 'use client';
 
@@ -255,12 +287,17 @@ export function useMarketSimulation() {
         }
       }
 
-      // Update cash (immutably - already creating new value)
+      // Update cash with REALISTIC TRANSACTION COSTS
+      const transactionCosts = calculateTransactionCosts(fillSize, fillPrice);
+
       if (order.side === 'buy') {
-        cash -= fillCost;
+        cash -= fillCost + transactionCosts; // Pay for shares + costs
       } else {
-        cash += fillCost;
+        cash += fillCost - transactionCosts; // Receive proceeds - costs
       }
+
+      // Deduct costs from realized P&L for accurate tracking
+      realizedPnL -= transactionCosts;
 
       // Create trade record
       const trade: CompletedTrade = {
