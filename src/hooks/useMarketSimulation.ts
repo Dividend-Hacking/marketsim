@@ -617,10 +617,11 @@ export function useMarketSimulation() {
   const simulationStep = useCallback(() => {
     const simulator = simulatorRef.current;
 
-    // Generate 7 price updates per bar for realistic OHLC variation
-    // This creates candlesticks with visible bodies and wicks
+    // Generate 12 price updates per bar for smooth OHLC variation
+    // OPTIMIZED: More steps per bar = more trading events = smoother bars
+    // This creates candlesticks with better body formation and realistic wicks
     // Each step processes order flow and matches orders
-    const STEPS_PER_BAR = 7;
+    const STEPS_PER_BAR = 12;
 
     for (let i = 0; i < STEPS_PER_BAR; i++) {
       simulator.simulateStep();

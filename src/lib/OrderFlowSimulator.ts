@@ -249,53 +249,56 @@ export class OrderFlowSimulator {
   private tradeIdCounter: number = 0;
   private currentPrice: number; // Last trade price (for initialization only)
 
-  // Timing
-  private readonly barDuration = 250; // 250ms bars
+  // Timing - OPTIMIZED for realistic liquid stock appearance
+  private readonly barDuration = 1000; // 1000ms (1 second) bars - smooth, realistic bars
   private readonly dt = 1 / (252); // 1 trading day per step (252 trading days/year)
 
   constructor(initialPrice: number = 100) {
     this.currentPrice = initialPrice;
     this.currentBarStartTime = Date.now();
 
-    // Create 10 informed traders with correlated beliefs
+    // Create 20 informed traders with correlated beliefs
     // Each has slightly different initial belief (±5% variation)
+    // OPTIMIZED for liquid stock appearance: lower threshold, larger sizes
     for (let i = 0; i < 20; i++) {
-      const beliefVariation = 0.90 + Math.random() * 0.10; // 0.95 to 1.05
+      const beliefVariation = 0.90 + Math.random() * 0.10; // 0.90 to 1.00
       this.informedTraders.push(
         new InformedTrader({
           initialBelief: initialPrice * beliefVariation,
-          threshold: 0.01, // 1.2% threshold to trade (balanced for volume and choppiness)
+          threshold: 0.003, // 0.3% threshold - more responsive, fills gaps
           aggression: 0.01, // 0.5% crossing of spread (more aggressive)
-          baseSize: 200,
+          baseSize: 800, // 4x larger for realistic volume
         })
       );
     }
 
     // Create 2 market makers for liquidity
+    // OPTIMIZED: Larger sizes for realistic depth
     this.marketMakers.push(
       new MarketMaker({
         spread: 0.002, // 0.2% half-spread
         levels: 4, // 4 levels deep on each side
-        baseSize: 50,
+        baseSize: 150, // 3x larger for thicker book
       })
     );
     this.marketMakers.push(
       new MarketMaker({
         spread: 0.0025, // Slightly wider spread
         levels: 3,
-        baseSize: 75,
+        baseSize: 200, // ~2.7x larger for thicker book
       })
     );
 
-    // Create 20 noise traders for volume and depth
+    // Create 40 noise traders for volume and depth
+    // OPTIMIZED: Larger sizes for realistic volume
     for (let i = 0; i < 40; i++) {
       this.noiseTraders.push(
         new NoiseTrader({
-          tradeProbability: 0.20, // 18% chance to trade each step (increased for volume)
-          marketOrderRatio: 0.5, // 30% market orders, 70% limit orders
-          minSize: 50, // Increased from 10 for better volume
-          maxSize: 100, // Increased from 50 for better volume
-          priceRange: 0.01, // Place limits within 0.5% of mid
+          tradeProbability: 0.20, // 20% chance to trade each step
+          marketOrderRatio: 0.5, // 50% market orders, 50% limit orders
+          minSize: 150, // 3x larger for realistic volume
+          maxSize: 400, // 4x larger for realistic volume
+          priceRange: 0.01, // Place limits within 1% of mid
         })
       );
     }
@@ -343,14 +346,14 @@ export class OrderFlowSimulator {
     }
 
     // Step 3: Update informed trader beliefs with correlated shocks
-    // OPTIMIZATION: Only update beliefs for traders that will generate orders
-    // This reduces belief updates by ~65% (from 20 to ~7 traders per step)
+    // OPTIMIZED: Higher activation rate (80%) for continuous price discovery and smooth bars
+    // This creates more consistent trading activity to fill gaps
     const sharedShock = this.randomPool.gaussian();
     const activeTraders: { trader: InformedTrader; idioShock: number }[] = [];
 
     for (const trader of this.informedTraders) {
-      // Check if trader will be active this step (same logic as order generation)
-      if (Math.random() < activity * 0.35) {
+      // Check if trader will be active this step - 80% activation for liquid appearance
+      if (Math.random() < activity * 0.80) {
         const idioShock = this.randomPool.gaussian();
         activeTraders.push({ trader, idioShock });
       }
@@ -393,6 +396,7 @@ export class OrderFlowSimulator {
     }
 
     // Step 6: Informed traders post orders (only for active traders - already filtered above)
+    // Note: Active traders are filtered at activation (line 353 - now 80% activation rate)
     for (const { trader } of activeTraders) {
       const order = trader.generateOrder(midPrice);
       if (order) {
